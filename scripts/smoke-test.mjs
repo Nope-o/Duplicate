@@ -18,7 +18,7 @@ async function readIfExists(relPath) {
 }
 
 function hasModuleBundleRef(html, key) {
-  const pattern = new RegExp(`<script[^>]+type=["']module["'][^>]+src=["'][^"']*assets\\/${key}\\.bundle\\.js["']`, 'i');
+  const pattern = new RegExp(`<script[^>]+type=["']module["'][^>]+src=["'][^"']*assets\\/${key}(?:\\.bundle)?(?:-[^"']+)?\\.js["']`, 'i');
   return pattern.test(html);
 }
 
@@ -44,25 +44,21 @@ async function run() {
   assert(/https:\/\/madhav-kataria\.com\//i.test(indexableUrlList), 'Search Console URL list missing homepage');
   assert(/https:\/\/madhav-kataria\.com\/projects\/ml\//i.test(indexableUrlList), 'Search Console URL list missing ML page');
 
-  const entryBundles = [
-    'assets/main.bundle.js',
-    'assets/sursightApp.bundle.js',
-    'assets/liteeditApp.bundle.js'
-  ];
+  const assetsDir = path.join(DIST, 'assets');
+  const assetFiles = await fs.readdir(assetsDir);
+  const hasEntryBundle = (key) => assetFiles.some((name) => new RegExp(`^${key}(?:\\.bundle)?(?:-[^.]+)?\\.js$`, 'i').test(name));
+  assert(hasEntryBundle('main'), 'Missing main entry bundle in dist/assets');
+  assert(hasEntryBundle('sursightApp'), 'Missing sursightApp entry bundle in dist/assets');
+  assert(hasEntryBundle('liteeditApp'), 'Missing liteeditApp entry bundle in dist/assets');
+
   const staticFiles = [
     'assets/images/logoo.webp',
-    'assets/images/pitch1.webp',
+    'assets/images/projects/sursight-studio/hero.webp',
     'projects/project-protection.js',
     'projects/ml/app.js',
     'Madhav_Kataria_Resume.pdf',
     'search-console-urls.txt'
   ];
-
-  for (const rel of entryBundles) {
-    const abs = path.join(DIST, rel);
-    const exists = await fs.pathExists(abs);
-    assert(exists, `Missing bundle: dist/${rel}`);
-  }
 
   for (const rel of staticFiles) {
     const abs = path.join(DIST, rel);

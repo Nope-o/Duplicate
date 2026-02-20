@@ -76,14 +76,25 @@ function PrivacyPolicy({ setActiveTab, isDark }) {
 
       <h3 className={`text-2xl font-bold mb-4 ${isDark ? 'text-slate-100' : 'text-gray-800'}`}>6. Your Choices and Rights</h3>
       <p className={`${isDark ? 'text-slate-300' : 'text-gray-700'} mb-4`}>
-        You can clear browser storage from your device settings at any time. If you want to request data correction or deletion for information submitted through this site, just reach out using the email below.
+        You can clear browser storage from your device settings at any time. If you want to request data correction or deletion for information submitted through this site, please use the Contact page.
       </p>
 
       <div className={`border-t my-6 ${isDark ? 'border-slate-700' : 'border-gray-300'}`}></div>
 
       <h3 className={`text-2xl font-bold mb-4 ${isDark ? 'text-slate-100' : 'text-gray-800'}`}>7. Contact</h3>
       <p className={`${isDark ? 'text-slate-300' : 'text-gray-700'} mb-4`}>
-        If you have any questions about this Privacy Policy, email me at: <a href="mailto:contact.madhavkataria@gmail.com" className={`${isDark ? 'text-sky-300' : 'text-blue-700'} hover:underline`}>contact.madhavkataria@gmail.com</a>
+        If you have any questions about this Privacy Policy, you can{" "}
+        <a
+          href="#contact"
+          onClick={(e) => {
+            e.preventDefault();
+            setActiveTab('contact', 'click');
+          }}
+          className={`${isDark ? 'text-sky-300' : 'text-blue-700'} hover:underline font-semibold`}
+        >
+          connect
+        </a>{" "}
+        with me from the Contact page.
       </p>
     </section>
   );

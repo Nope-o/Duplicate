@@ -682,58 +682,6 @@
       color: var(--muted);
     }
 
-    .empty-demo-strip {
-      position: relative;
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 2px;
-    }
-
-    .demo-chip {
-      border: 1px solid var(--border);
-      background: color-mix(in srgb, var(--surface-2) 92%, transparent);
-      border-radius: 12px;
-      color: var(--text);
-      padding: 6px;
-      display: grid;
-      gap: 6px;
-      text-align: left;
-      cursor: pointer;
-      transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
-    }
-
-    .demo-chip:hover {
-      border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
-      background: color-mix(in srgb, var(--primary) 10%, var(--surface-2));
-      transform: translateY(-1px);
-    }
-
-    .demo-chip:disabled {
-      opacity: 0.6;
-      cursor: progress;
-      transform: none;
-    }
-
-    .demo-chip img {
-      width: 100%;
-      height: 88px;
-      border-radius: 9px;
-      object-fit: cover;
-      border: 1px solid var(--border);
-      background: color-mix(in srgb, var(--surface) 80%, #fff);
-    }
-
-    .demo-chip span {
-      font-size: 0.73rem;
-      color: var(--muted);
-      font-weight: 600;
-      letter-spacing: 0.1px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
     .canvas-zone.drag-over .empty-hero {
       border-color: color-mix(in srgb, var(--primary) 64%, var(--border));
       box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent), 0 24px 48px rgba(15, 23, 42, 0.14);

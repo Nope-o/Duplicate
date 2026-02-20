@@ -58,9 +58,12 @@ Both projects involved end-to-end development, from requirements gathering to de
 
 function Journey({ setAppWinAnimation, isDark }) {
   const [openDetailIndex, setOpenDetailIndex] = React.useState(null);
+  const [animatingIconIndex, setAnimatingIconIndex] = React.useState(null);
   const [gameWon, setGameWon] = React.useState(false);
   const [showGameIntro, setShowGameIntro] = React.useState(true);
   const winTimerRef = React.useRef(null);
+  const iconJiggleTimerRef = React.useRef(null);
+  const iconJiggleRafRef = React.useRef(null);
   const timelineItemRefs = React.useRef({});
   const startJourneyPuzzle = React.useCallback(() => {
     setShowGameIntro(false);
@@ -76,7 +79,35 @@ function Journey({ setAppWinAnimation, isDark }) {
       if (winTimerRef.current !== null) {
         clearTimeout(winTimerRef.current);
       }
+      if (iconJiggleTimerRef.current !== null) {
+        clearTimeout(iconJiggleTimerRef.current);
+      }
+      if (iconJiggleRafRef.current !== null) {
+        cancelAnimationFrame(iconJiggleRafRef.current);
+      }
     };
+  }, []);
+
+  const triggerIconJiggle = React.useCallback((index) => {
+    if (iconJiggleTimerRef.current !== null) {
+      clearTimeout(iconJiggleTimerRef.current);
+      iconJiggleTimerRef.current = null;
+    }
+    if (iconJiggleRafRef.current !== null) {
+      cancelAnimationFrame(iconJiggleRafRef.current);
+      iconJiggleRafRef.current = null;
+    }
+
+    // Reset and re-apply class so repeated taps reliably restart the jiggle animation.
+    setAnimatingIconIndex(null);
+    iconJiggleRafRef.current = requestAnimationFrame(() => {
+      setAnimatingIconIndex(index);
+      iconJiggleRafRef.current = null;
+      iconJiggleTimerRef.current = setTimeout(() => {
+        setAnimatingIconIndex(null);
+        iconJiggleTimerRef.current = null;
+      }, 520);
+    });
   }, []);
 
   const toggleDetails = (index) => {
@@ -84,6 +115,7 @@ function Journey({ setAppWinAnimation, isDark }) {
     const anchorEl = timelineItemRefs.current[index];
     const previousTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
 
+    triggerIconJiggle(index);
     setOpenDetailIndex(nextOpenIndex);
 
     if (previousTop === null) return;
@@ -184,7 +216,7 @@ function Journey({ setAppWinAnimation, isDark }) {
                     <img
                       src={item.iconUrl}
                       alt="icon"
-                      className="timeline-icon"
+                      className={`timeline-icon ${animatingIconIndex === i ? 'animate-jiggle' : ''}`}
                       loading="lazy"
                     />
                   </span>

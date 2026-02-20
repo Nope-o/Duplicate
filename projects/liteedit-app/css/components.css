@@ -257,6 +257,91 @@
       margin-top: 8px;
     }
 
+    #bulkSequentialGroup {
+      display: none;
+    }
+
+    #bulkSequentialGroup.active {
+      display: grid;
+      gap: 6px;
+    }
+
+    .bulk-files-panel {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: color-mix(in srgb, var(--surface-2) 82%, transparent);
+      max-height: 280px;
+      overflow: auto;
+      padding: 8px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .bulk-files-panel.hidden {
+      display: none;
+    }
+
+    .bulk-files-empty {
+      font-size: 0.74rem;
+      color: var(--muted);
+      padding: 4px;
+    }
+
+    .bulk-file-row {
+      display: grid;
+      grid-template-columns: 68px 1fr;
+      gap: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      background: color-mix(in srgb, var(--surface) 90%, transparent);
+      align-items: center;
+    }
+
+    .bulk-file-thumb {
+      width: 68px;
+      height: 68px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 75%, transparent);
+    }
+
+    .bulk-file-meta {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .bulk-file-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bulk-file-details {
+      font-size: 0.7rem;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .bulk-file-config {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 144px;
+      gap: 8px;
+    }
+
+    .bulk-file-config input,
+    .bulk-file-config select {
+      width: 100%;
+    }
+
     .topbar-actions .btn-primary {
       font-weight: 700;
     }

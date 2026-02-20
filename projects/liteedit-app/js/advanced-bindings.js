@@ -29,12 +29,6 @@ export function bindLiteEditAdvanced({
     localStorage.setItem('liteedit_text_font_family', state.textFontFamily);
     setStatus(`Text font set to ${state.textFontFamily === 'auto' ? 'Auto Match' : 'manual override'}`);
   });
-  dom.replaceTextInput.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      applySmartTextReplace();
-    }
-  });
 
   dom.hideToolsBtn.addEventListener('click', () => applyToolsVisibility(false));
   dom.toolButtons.forEach((btn) => {

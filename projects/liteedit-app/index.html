@@ -14,11 +14,11 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://madhav-kataria.com/projects/liteedit-app/" />
   <meta property="og:description" content="Edit, optimize, and export images directly in your browser with local processing." />
-  <meta property="og:image" content="https://madhav-kataria.com/assets/images/logoo.webp" />
+  <meta property="og:image" content="https://madhav-kataria.com/assets/images/projects/liteedit/hero.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="LiteEdit Pro - Browser Image Editor" />
   <meta name="twitter:description" content="Privacy-first browser image editing with local processing and fast export." />
-  <meta name="twitter:image" content="https://madhav-kataria.com/assets/images/logoo.webp" />
+  <meta name="twitter:image" content="https://madhav-kataria.com/assets/images/projects/liteedit/hero.png" />
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -36,8 +36,8 @@
     }
   </script>
   <script src="../project-protection.js" defer></script>
-  <link rel="icon" type="image/webp" href="../../assets/images/logoo.webp" />
-  <link rel="apple-touch-icon" href="../../assets/images/logoo.webp" />
+  <link rel="icon" type="image/webp" href="../../assets/images/projects/liteedit/logo.webp" />
+  <link rel="apple-touch-icon" href="../../assets/images/projects/liteedit/logo.webp" />
   <link rel="stylesheet" href="./css/tokens.css" />
   <link rel="stylesheet" href="./css/layout.css" />
   <link rel="stylesheet" href="./css/components.css" />
@@ -47,7 +47,7 @@
   <div class="app" id="appRoot">
     <header class="topbar">
       <a class="brand" href="../../#projects" title="Back to Projects">
-        <img src="../../assets/images/logoo.webp" alt="Madhav Kataria logo" />
+        <img src="../../assets/images/projects/liteedit/logo.webp" alt="Madhav Kataria logo" />
         <h1>LiteEdit Pro</h1>
       </a>
       <div class="topbar-actions">
@@ -177,20 +177,6 @@
                 <button id="emptyCaptureBtn" class="btn" type="button">Capture Image</button>
               </div>
               <div class="empty-drop-hint">or drag and drop files directly in this area</div>
-              <div class="empty-demo-strip" aria-label="Demo images">
-                <button class="demo-chip" type="button" data-demo-src="../../assets/images/pitch1.webp" data-demo-name="demo-photo.webp" data-demo-type="image/webp">
-                  <img src="../../assets/images/pitch1.webp" alt="Demo photo" loading="lazy" decoding="async" />
-                  <span>Portrait • 2.8 MB</span>
-                </button>
-                <button class="demo-chip" type="button" data-demo-src="../../assets/images/pitch2.webp" data-demo-name="demo-artwork.webp" data-demo-type="image/webp">
-                  <img src="../../assets/images/pitch2.webp" alt="Demo artwork" loading="lazy" decoding="async" />
-                  <span>Artwork • 2.9 MB</span>
-                </button>
-                <button class="demo-chip" type="button" data-demo-src="../../assets/images/dashboard.png" data-demo-name="demo-screen.png" data-demo-type="image/png">
-                  <img src="../../assets/images/dashboard.png" alt="Demo dashboard screenshot" loading="lazy" decoding="async" />
-                  <span>Screen • 1.6 MB</span>
-                </button>
-              </div>
             </div>
           </div>
           <canvas id="mainCanvas"></canvas>
@@ -240,7 +226,7 @@
 
           <div class="fieldset advanced-only">
             <div class="legend">Smart Text Edit (Beta)</div>
-            <p class="simple-hint">Detect text, then tap a highlighted block on the image to edit directly there.</p>
+            <p class="simple-hint">Detect text, then select a token and replace it while keeping original placement and style.</p>
             <div class="row">
               <button id="detectTextBtn" class="btn" type="button">Detect Text</button>
               <button id="clearTextBoxesBtn" class="btn" type="button">Clear Boxes</button>
@@ -362,10 +348,7 @@
             <div class="legend">Single File Controls</div>
             <div class="field">
               <label for="renameInput">File Name</label>
-              <div class="row">
-                <input id="renameInput" type="text" placeholder="Rename selected image" />
-                <button id="applyRenameBtn" class="btn" type="button">Rename</button>
-              </div>
+              <input id="renameInput" type="text" placeholder="Type final file name" />
             </div>
             <div class="row">
               <div class="field">
@@ -417,6 +400,32 @@
           <div class="fieldset">
             <div class="legend">Bulk Export</div>
             <p class="simple-hint">Exports all loaded images with current edits applied.</p>
+            <div class="field">
+              <label for="bulkExportModeInput">Bulk Delivery</label>
+              <select id="bulkExportModeInput">
+                <option value="zip" selected>ZIP Export</option>
+                <option value="multiple">Multiple File Export</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="bulkAdvancedInput">Advanced</label>
+              <select id="bulkAdvancedInput">
+                <option value="none" selected>None</option>
+                <option value="sequential">Sequential Naming (ZIP only)</option>
+              </select>
+            </div>
+            <div id="bulkSequentialGroup" class="field">
+              <label for="bulkSequentialBaseInput">Sequential Base Name</label>
+              <input id="bulkSequentialBaseInput" type="text" value="Name" placeholder="Example: Name" />
+              <p class="muted">ZIP output names become Base1, Base2, Base3...</p>
+            </div>
+            <div class="field">
+              <label for="bulkShowImagesInput">Bulk Image View</label>
+              <select id="bulkShowImagesInput">
+                <option value="show" selected>Show Images</option>
+                <option value="hide">Hide Images</option>
+              </select>
+            </div>
             <div id="bulkPdfOptions" class="bulk-pdf-options">
               <label class="inline">
                 <input id="pdfBulkModeCombined" type="radio" name="pdfBulkMode" value="combined" checked />
@@ -424,9 +433,10 @@
               </label>
               <label class="inline">
                 <input id="pdfBulkModeSeparate" type="radio" name="pdfBulkMode" value="separate" />
-                Separate PDFs (ZIP)
+                Separate PDFs
               </label>
             </div>
+            <div id="bulkFilesPanel" class="bulk-files-panel" aria-live="polite"></div>
           </div>
         </div>
 

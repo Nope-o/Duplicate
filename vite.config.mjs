@@ -13,6 +13,8 @@ const GENERATED_MAIN_ENTRY = path.join(ROOT, '.vite-temp', 'main-site-entry.gene
 const RAW_BASE = process.env.VITE_BASE_PATH || '/';
 const BASE_PATH = RAW_BASE.startsWith('/') ? RAW_BASE : `/${RAW_BASE}`;
 const NORMALIZED_BASE = BASE_PATH.endsWith('/') ? BASE_PATH : `${BASE_PATH}/`;
+const SHOULD_COPY_CNAME = NORMALIZED_BASE === '/';
+const PAGES_CNAME = (process.env.PAGES_CNAME || '').trim();
 const GENERATED_MAIN_ENTRY_PUBLIC = '/.vite-temp/main-site-entry.generated.js';
 const ROOT_INDEX_FILE = path.resolve(ROOT, 'index.html').replace(/\\/g, '/');
 
@@ -40,8 +42,7 @@ const STATIC_COPY_ITEMS = [
   { src: 'projects/ml/app.js', dest: 'projects/ml/app.js' },
   { src: 'Madhav_Kataria_Resume.pdf', dest: 'Madhav_Kataria_Resume.pdf' },
   { src: 'robots.txt', dest: 'robots.txt' },
-  { src: 'BingSiteAuth.xml', dest: 'BingSiteAuth.xml' },
-  { src: 'CNAME', dest: 'CNAME' }
+  { src: 'BingSiteAuth.xml', dest: 'BingSiteAuth.xml' }
 ];
 
 const MAIN_SITE_SOURCE_SCRIPTS = [
@@ -262,6 +263,11 @@ function copyStaticFilesPlugin() {
           overwrite: true,
           filter: (filePath) => path.basename(filePath) !== '.DS_Store'
         });
+      }
+
+      // Emit CNAME only for root-path builds when domain is explicitly provided.
+      if (SHOULD_COPY_CNAME && PAGES_CNAME) {
+        await fs.writeFile(path.join(DIST_DIR, 'CNAME'), `${PAGES_CNAME}\n`, 'utf8');
       }
 
       const sitemapXml = buildSitemapXml(SITEMAP_ROUTES);

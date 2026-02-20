@@ -4,7 +4,6 @@
       formatBytes
     } from './app-core-utils.js';
     import {
-      inferMimeTypeFromExtension,
       isLikelyImageFile,
       normalizeImageMimeType,
       sniffImageMimeType
@@ -25,6 +24,11 @@
       cameraPreset: 'photo',
       exportMode: localStorage.getItem('liteedit_export_mode') || 'single',
       bulkPdfMode: localStorage.getItem('liteedit_bulk_pdf_mode') || 'combined',
+      bulkExportMode: localStorage.getItem('liteedit_bulk_export_mode') || 'zip',
+      bulkAdvancedMode: localStorage.getItem('liteedit_bulk_advanced_mode') || 'none',
+      bulkSequentialBase: localStorage.getItem('liteedit_bulk_sequential_base') || 'Name',
+      bulkShowImages: localStorage.getItem('liteedit_bulk_show_images') || 'show',
+      bulkFormatOverrides: {},
       userMode: localStorage.getItem('liteedit_user_mode') || 'simple',
       importOptimize: localStorage.getItem('liteedit_import_optimize') !== 'false',
       importMaxEdge: parseInt(localStorage.getItem('liteedit_import_max_edge') || '4096', 10),
@@ -101,6 +105,12 @@
       cancelHelpSheetBtn: document.getElementById('cancelHelpSheetBtn'),
       exportModeSingleBtn: document.getElementById('exportModeSingleBtn'),
       exportModeBulkBtn: document.getElementById('exportModeBulkBtn'),
+      bulkExportModeInput: document.getElementById('bulkExportModeInput'),
+      bulkAdvancedInput: document.getElementById('bulkAdvancedInput'),
+      bulkSequentialGroup: document.getElementById('bulkSequentialGroup'),
+      bulkSequentialBaseInput: document.getElementById('bulkSequentialBaseInput'),
+      bulkShowImagesInput: document.getElementById('bulkShowImagesInput'),
+      bulkFilesPanel: document.getElementById('bulkFilesPanel'),
       bulkPdfOptions: document.getElementById('bulkPdfOptions'),
       pdfBulkModeCombined: document.getElementById('pdfBulkModeCombined'),
       pdfBulkModeSeparate: document.getElementById('pdfBulkModeSeparate'),
@@ -132,7 +142,6 @@
       emptyUploadBtn: document.getElementById('emptyUploadBtn'),
       emptyPasteBtn: document.getElementById('emptyPasteBtn'),
       emptyCaptureBtn: document.getElementById('emptyCaptureBtn'),
-      emptyDemoButtons: Array.from(document.querySelectorAll('.demo-chip')),
       cropTip: document.getElementById('cropTip'),
       toggleThumbsBtn: document.getElementById('toggleThumbsBtn'),
       floatingThumbsBtn: document.getElementById('floatingThumbsBtn'),
@@ -177,7 +186,6 @@
       floatingRedoBtn: document.getElementById('floatingRedoBtn'),
       formatInput: document.getElementById('formatInput'),
       renameInput: document.getElementById('renameInput'),
-      applyRenameBtn: document.getElementById('applyRenameBtn'),
       detectTextBtn: document.getElementById('detectTextBtn'),
       clearTextBoxesBtn: document.getElementById('clearTextBoxesBtn'),
       detectedTextSelect: document.getElementById('detectedTextSelect'),
@@ -382,12 +390,163 @@
       state.modalFocusOrigin = null;
     }
 
+    function normalizeBulkExportMode(value) {
+      return value === 'multiple' ? 'multiple' : 'zip';
+    }
+
+    function normalizeBulkAdvancedMode(value) {
+      return value === 'sequential' ? 'sequential' : 'none';
+    }
+
+    function normalizeBulkShowMode(value) {
+      return value === 'hide' ? 'hide' : 'show';
+    }
+
+    function pruneBulkFormatOverrides() {
+      const ids = new Set(state.images.map((img) => img.id));
+      Object.keys(state.bulkFormatOverrides).forEach((imageId) => {
+        if (!ids.has(imageId)) {
+          delete state.bulkFormatOverrides[imageId];
+        }
+      });
+    }
+
+    function getBulkExportFormatForImage(img) {
+      if (!img) return getExportFormat();
+      const override = state.bulkFormatOverrides[img.id];
+      if (!override) return getExportFormat();
+      const option = Array.from(dom.formatInput.options || []).find((entry) => entry.value === override);
+      if (!option || option.disabled) return getExportFormat();
+      return override;
+    }
+
+    function updateBulkOptionsUI() {
+      if (dom.bulkExportModeInput) {
+        dom.bulkExportModeInput.value = normalizeBulkExportMode(state.bulkExportMode);
+      }
+      if (dom.bulkAdvancedInput) {
+        dom.bulkAdvancedInput.value = normalizeBulkAdvancedMode(state.bulkAdvancedMode);
+      }
+      if (dom.bulkShowImagesInput) {
+        dom.bulkShowImagesInput.value = normalizeBulkShowMode(state.bulkShowImages);
+      }
+      if (dom.bulkSequentialBaseInput) {
+        dom.bulkSequentialBaseInput.value = state.bulkSequentialBase;
+      }
+      const showSequential = state.exportMode === 'bulk'
+        && state.bulkExportMode === 'zip'
+        && state.bulkAdvancedMode === 'sequential';
+      if (dom.bulkSequentialGroup) {
+        dom.bulkSequentialGroup.classList.toggle('active', showSequential);
+      }
+      const showBulkPanel = state.exportMode === 'bulk' && state.bulkShowImages === 'show';
+      if (dom.bulkFilesPanel) {
+        dom.bulkFilesPanel.classList.toggle('hidden', !showBulkPanel);
+      }
+      if (dom.bulkPdfOptions) {
+        const bulkFormatHasPdf = state.images.some((img) => getBulkExportFormatForImage(img) === 'application/pdf');
+        const showPdfControls = state.exportMode === 'bulk' && bulkFormatHasPdf;
+        dom.bulkPdfOptions.style.display = showPdfControls ? 'grid' : 'none';
+      }
+    }
+
+    function shouldRenderBulkPanelNow() {
+      return state.exportMode === 'bulk'
+        && !!dom.exportSheet
+        && dom.exportSheet.classList.contains('active');
+    }
+
+    function createBulkFormatSelect(selectedType) {
+      const select = document.createElement('select');
+      select.className = 'bulk-file-format-select';
+      const options = Array.from(dom.formatInput.options || []);
+      options.forEach((option) => {
+        const clone = document.createElement('option');
+        clone.value = option.value;
+        clone.textContent = option.textContent;
+        clone.disabled = option.disabled;
+        select.appendChild(clone);
+      });
+      const preferred = options.find((option) => option.value === selectedType && !option.disabled);
+      if (preferred) {
+        select.value = selectedType;
+      } else {
+        const fallback = options.find((option) => !option.disabled);
+        if (fallback) select.value = fallback.value;
+      }
+      return select;
+    }
+
+    function renderBulkFilesPanel() {
+      if (!dom.bulkFilesPanel) return;
+      dom.bulkFilesPanel.innerHTML = '';
+      if (state.images.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'bulk-files-empty';
+        empty.textContent = 'No files loaded.';
+        dom.bulkFilesPanel.appendChild(empty);
+        return;
+      }
+
+      pruneBulkFormatOverrides();
+
+      state.images.forEach((img, index) => {
+        const row = document.createElement('article');
+        row.className = 'bulk-file-row';
+        row.dataset.imageId = img.id;
+
+        const thumb = document.createElement('img');
+        thumb.className = 'bulk-file-thumb';
+        thumb.alt = img.name;
+        thumb.loading = 'lazy';
+        thumb.decoding = 'async';
+        thumb.src = getThumbnailDataUrl(img);
+        row.appendChild(thumb);
+
+        const meta = document.createElement('div');
+        meta.className = 'bulk-file-meta';
+
+        const title = document.createElement('div');
+        title.className = 'bulk-file-title';
+        title.textContent = `${index + 1}. ${img.canvas.width}x${img.canvas.height}`;
+        meta.appendChild(title);
+
+        const details = document.createElement('div');
+        details.className = 'bulk-file-details';
+        const sourceMimeType = img.mimeType || (img.file && img.file.type) || 'image/jpeg';
+        const originalType = extensionForType(sourceMimeType).toUpperCase();
+        details.textContent = `Original: ${originalType} | ${formatBytes(getOriginalBytesForImage(img))}`;
+        meta.appendChild(details);
+
+        const config = document.createElement('div');
+        config.className = 'bulk-file-config';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'bulk-file-name-input';
+        nameInput.value = img.name;
+        nameInput.placeholder = 'Final file name';
+        config.appendChild(nameInput);
+
+        const selectedType = getBulkExportFormatForImage(img);
+        const formatSelect = createBulkFormatSelect(selectedType);
+        config.appendChild(formatSelect);
+
+        meta.appendChild(config);
+        row.appendChild(meta);
+        dom.bulkFilesPanel.appendChild(row);
+      });
+    }
+
     function updateExportSummary() {
       if (!dom.exportSummary) return;
       const formatLabel = (dom.formatInput.selectedOptions[0] && dom.formatInput.selectedOptions[0].textContent) || 'JPG';
       const quality = parseInt(dom.qualityInput.value, 10) || 90;
-      const modeLabel = state.exportMode === 'bulk' ? 'Bulk' : 'Single';
-      const pdfModeLabel = state.exportMode === 'bulk' && getExportFormat() === 'application/pdf'
+      const bulkLabel = state.bulkExportMode === 'multiple' ? 'Multiple' : 'ZIP';
+      const modeLabel = state.exportMode === 'bulk' ? `Bulk (${bulkLabel})` : 'Single';
+      const bulkHasPdf = state.exportMode === 'bulk'
+        && state.images.some((img) => getBulkExportFormatForImage(img) === 'application/pdf');
+      const pdfModeLabel = bulkHasPdf
         ? ` | PDF: ${state.bulkPdfMode === 'combined' ? 'Combined' : 'Separate'}`
         : '';
       const files = state.images.length;
@@ -462,7 +621,6 @@
       const hasTextSelection = state.textSelectionIndex >= 0 && state.textSelectionIndex < detections.length;
       [
         dom.downloadBtn,
-        dom.applyRenameBtn,
         dom.applyResizeBtn,
         dom.rotateLeftBtn,
         dom.rotateRightBtn,
@@ -492,6 +650,10 @@
       if (dom.openExportBtn) dom.openExportBtn.disabled = !hasAny;
       if (dom.mobileExportBtn) dom.mobileExportBtn.disabled = !hasAny;
       if (dom.openExportFromSettingsBtn) dom.openExportFromSettingsBtn.disabled = !hasAny;
+      if (dom.bulkExportModeInput) dom.bulkExportModeInput.disabled = !hasAny;
+      if (dom.bulkAdvancedInput) dom.bulkAdvancedInput.disabled = !hasAny;
+      if (dom.bulkShowImagesInput) dom.bulkShowImagesInput.disabled = !hasAny;
+      if (dom.bulkSequentialBaseInput) dom.bulkSequentialBaseInput.disabled = !hasAny || state.bulkExportMode !== 'zip';
       if (dom.detectTextBtn) dom.detectTextBtn.disabled = !hasImage || state.detectingText;
       if (dom.clearTextBoxesBtn) dom.clearTextBoxesBtn.disabled = !hasImage || detections.length === 0;
       if (dom.detectedTextSelect) dom.detectedTextSelect.disabled = !hasImage || detections.length === 0;
@@ -843,6 +1005,28 @@
       return detections[state.textSelectionIndex];
     }
 
+    function focusReplacementInput(preferQuick = false) {
+      const tryFocus = (input) => {
+        if (!input || input.disabled) return false;
+        try {
+          input.focus({ preventScroll: true });
+        } catch (error) {
+          input.focus();
+        }
+        if (typeof input.select === 'function') {
+          input.select();
+        }
+        return true;
+      };
+
+      if (preferQuick && dom.textQuickEditor && dom.textQuickEditor.classList.contains('active')) {
+        if (tryFocus(dom.textQuickInput)) return true;
+      }
+      if (tryFocus(dom.replaceTextInput)) return true;
+      if (tryFocus(dom.textQuickInput)) return true;
+      return false;
+    }
+
     function hasValidCropSelection() {
       const rect = normalizeCropRect(state.cropRect);
       if (!rect) return false;
@@ -872,7 +1056,7 @@
         renderCanvas();
       }
       if (!silent) {
-        setStatus('Detected text boxes cleared');
+        setStatus('Detected text tokens cleared');
       }
     }
 
@@ -896,6 +1080,9 @@
       }
       syncTextEditPanel();
       renderCanvas();
+      if (syncInput) {
+        focusReplacementInput(true);
+      }
       return true;
     }
 
@@ -903,23 +1090,38 @@
       const selectedIndex = getTextDetectionIndexAtPoint(point);
       if (selectedIndex < 0) return false;
       selectTextDetection(selectedIndex, true);
-      setStatus(`Selected text block ${selectedIndex + 1}`);
+      setStatus(`Selected text token ${selectedIndex + 1}`);
       return true;
     }
 
     function getTextDetectionIndexAtPoint(point) {
       const detections = getTextDetectionsForImage();
       if (detections.length === 0) return -1;
+      let bestIndex = -1;
+      let bestScore = Number.POSITIVE_INFINITY;
       for (let i = detections.length - 1; i >= 0; i -= 1) {
         const box = detections[i];
+        const tolerance = Math.max(3, Math.min(14, Math.round(Math.min(box.w, box.h) * 0.22)));
+        const left = box.x - tolerance;
+        const right = box.x + box.w + tolerance;
+        const top = box.y - tolerance;
+        const bottom = box.y + box.h + tolerance;
         if (
-          point.x >= box.x && point.x <= box.x + box.w
-          && point.y >= box.y && point.y <= box.y + box.h
+          point.x >= left && point.x <= right
+          && point.y >= top && point.y <= bottom
         ) {
-          return i;
+          const centerX = box.x + (box.w / 2);
+          const centerY = box.y + (box.h / 2);
+          const dx = point.x - centerX;
+          const dy = point.y - centerY;
+          const score = (dx * dx) + (dy * dy);
+          if (score < bestScore) {
+            bestScore = score;
+            bestIndex = i;
+          }
         }
       }
-      return -1;
+      return bestIndex;
     }
 
     function beginTextBlockDrag(index, point) {
@@ -1018,12 +1220,13 @@
       state.textQuickSelectionIndex = state.textSelectionIndex;
     }
 
-    function syncTextEditPanel() {
+    function syncTextEditPanel(options = {}) {
+      const preserveNoSelection = !!(options && options.preserveNoSelection);
       const hasImage = !!activeImage();
       const supported = isTextDetectorSupported();
       const detections = getTextDetectionsForImage();
 
-      if (detections.length > 0 && (state.textSelectionIndex < 0 || state.textSelectionIndex >= detections.length)) {
+      if (!preserveNoSelection && detections.length > 0 && (state.textSelectionIndex < 0 || state.textSelectionIndex >= detections.length)) {
         state.textSelectionIndex = 0;
       }
       if (detections.length === 0) {
@@ -1032,7 +1235,7 @@
 
       if (dom.detectTextSupportNote) {
         dom.detectTextSupportNote.textContent = supported
-          ? 'Detect text, then tap a highlighted block on image to edit or drag it.'
+          ? 'Detect text, then edit using the white word indicators on canvas or from the token list.'
           : 'Native text detection is unavailable. OCR fallback will load when you tap Detect Text.';
       }
 
@@ -1046,7 +1249,7 @@
           detections.forEach((detection, idx) => {
             const option = document.createElement('option');
             const preview = (detection.text || '').replace(/\s+/g, ' ').trim();
-            const snippet = preview ? preview.slice(0, 28) : `Block ${idx + 1}`;
+            const snippet = preview ? preview.slice(0, 28) : `Token ${idx + 1}`;
             option.value = String(idx);
             option.textContent = `${idx + 1}. ${snippet}${preview.length > 28 ? '...' : ''}`;
             dom.detectedTextSelect.appendChild(option);
@@ -1096,7 +1299,7 @@
 
       try {
         const textTools = await ensureTextToolsLoaded();
-        const detections = await textTools.detectTextBlocks(img.canvas);
+        const detections = await textTools.detectTextBlocks(img.canvas, { granularity: 'word' });
         if (typeof textTools.estimateTextStyle === 'function') {
           detections.forEach((detection) => {
             detection.style = textTools.estimateTextStyle(img.canvas, detection, detection.text);
@@ -1112,14 +1315,19 @@
         }
 
         setStatus(detections.length > 0
-          ? `Detected ${detections.length} text block${detections.length > 1 ? 's' : ''}`
-          : 'No readable text blocks found');
+          ? `Detected ${detections.length} text token${detections.length > 1 ? 's' : ''}`
+          : 'No readable text tokens found');
         showToast(
           detections.length > 0
-            ? `Detected ${detections.length} text block${detections.length > 1 ? 's' : ''}.`
-            : 'No text blocks detected.',
+            ? `Detected ${detections.length} text token${detections.length > 1 ? 's' : ''}.`
+            : 'No text detected.',
           detections.length > 0 ? 'success' : 'info'
         );
+        if (detections.length > 0) {
+          window.setTimeout(() => {
+            focusReplacementInput(true);
+          }, 0);
+        }
       } catch (error) {
         console.error('Text detection failed:', error);
         const message = (error && error.message) ? error.message : 'Text detection failed for this image.';
@@ -1151,7 +1359,7 @@
       const img = activeImage();
       const selected = getSelectedTextDetection();
       if (!img || !selected) {
-        showToast('Select a detected text block first.', 'error');
+        showToast('Select a detected text token first.', 'error');
         return;
       }
 
@@ -1178,6 +1386,7 @@
         ? overrideAutoFit
         : !!(dom.smartTextAutoSizeInput && dom.smartTextAutoSizeInput.checked);
       const lockSourceSize = !!(options && options.lockSourceSize);
+      const closeEditor = !!(options && options.closeEditor);
       const fontFamily = resolveTextFontFamily();
 
       pushHistory(img);
@@ -1231,8 +1440,15 @@
       renderCanvas();
       updateUndoRedoState();
       updateExportSizeEstimate();
-      syncTextEditPanel();
-      setStatus('Text replaced with smart matching');
+      if (closeEditor) {
+        state.textSelectionIndex = -1;
+        if (dom.detectedTextSelect) dom.detectedTextSelect.value = '';
+        hideTextQuickEditor();
+        syncTextEditPanel({ preserveNoSelection: true });
+      } else {
+        syncTextEditPanel();
+      }
+      setStatus('Text updated with preserved style and placement');
       showToast('Text replaced successfully.', 'success');
     }
 
@@ -1408,6 +1624,10 @@
       dom.downloadAllBtn.style.display = nextMode === 'bulk' ? 'inline-flex' : 'none';
       localStorage.setItem('liteedit_export_mode', nextMode);
       updateBulkPdfModeVisibility();
+      updateBulkOptionsUI();
+      if (nextMode === 'bulk') {
+        renderBulkFilesPanel();
+      }
       updateExportSummary();
       updateActionAvailability();
     }
@@ -1422,10 +1642,45 @@
       updateExportSummary();
     }
 
+    function applyBulkExportMode(mode) {
+      const nextMode = normalizeBulkExportMode(mode);
+      state.bulkExportMode = nextMode;
+      localStorage.setItem('liteedit_bulk_export_mode', nextMode);
+      updateBulkOptionsUI();
+      updateActionAvailability();
+      updateExportSummary();
+    }
+
+    function applyBulkAdvancedMode(mode) {
+      const nextMode = normalizeBulkAdvancedMode(mode);
+      state.bulkAdvancedMode = nextMode;
+      localStorage.setItem('liteedit_bulk_advanced_mode', nextMode);
+      updateBulkOptionsUI();
+      updateActionAvailability();
+      updateExportSummary();
+    }
+
+    function applyBulkShowImages(mode) {
+      const nextMode = normalizeBulkShowMode(mode);
+      state.bulkShowImages = nextMode;
+      localStorage.setItem('liteedit_bulk_show_images', nextMode);
+      updateBulkOptionsUI();
+      if (shouldRenderBulkPanelNow() && nextMode === 'show') {
+        renderBulkFilesPanel();
+      }
+    }
+
+    function applyBulkSequentialBase(value) {
+      const sanitized = sanitizeFileName(value || '').replace(/\.[^.]+$/, '').trim();
+      state.bulkSequentialBase = sanitized || 'Name';
+      localStorage.setItem('liteedit_bulk_sequential_base', state.bulkSequentialBase);
+      if (dom.bulkSequentialBaseInput) {
+        dom.bulkSequentialBaseInput.value = state.bulkSequentialBase;
+      }
+    }
+
     function updateBulkPdfModeVisibility() {
-      if (!dom.bulkPdfOptions) return;
-      const show = state.exportMode === 'bulk' && getExportFormat() === 'application/pdf';
-      dom.bulkPdfOptions.style.display = show ? 'grid' : 'none';
+      updateBulkOptionsUI();
     }
 
     async function refreshExportFormatAvailability() {
@@ -1476,6 +1731,10 @@
       if (fallbackValue && dom.formatInput.value !== fallbackValue) {
         dom.formatInput.value = fallbackValue;
       }
+      updateBulkOptionsUI();
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
     }
 
     async function openExportSheet() {
@@ -1489,6 +1748,10 @@
       const autoMode = state.images.length > 1 ? 'bulk' : 'single';
       applyExportMode(autoMode);
       applyBulkPdfMode(state.bulkPdfMode);
+      applyBulkExportMode(state.bulkExportMode);
+      applyBulkAdvancedMode(state.bulkAdvancedMode);
+      applyBulkShowImages(state.bulkShowImages);
+      applyBulkSequentialBase(state.bulkSequentialBase);
       openModal(dom.exportSheet);
       if (!activeImage() && state.images.length > 0) {
         selectImage(0);
@@ -1501,6 +1764,7 @@
         showToast('Export tools could not load. Check network and retry.', 'error');
         return;
       }
+      renderBulkFilesPanel();
       updateExportSizeEstimate();
       updateExportSummary();
     }
@@ -1856,19 +2120,29 @@
       return cleaned.slice(0, 120);
     }
 
-    function applyRename() {
+    function applyRename(options = {}) {
+      const { silent = false } = options;
       const img = activeImage();
       if (!img) return;
       const nextName = sanitizeFileName(dom.renameInput.value);
       if (!nextName) {
         dom.renameInput.value = img.name;
-        setStatus('Rename cancelled: empty file name');
+        if (!silent) {
+          setStatus('File name cannot be empty');
+        }
         return;
       }
       if (nextName === img.name) return;
       img.name = nextName;
-      requestThumbnailsRender(true);
-      setStatus(`Renamed to ${img.name}`);
+      if (!silent) {
+        requestThumbnailsRender(true);
+      }
+      if (!silent) {
+        setStatus(`File name set to ${img.name}`);
+      }
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
       updateExportSummary();
     }
 
@@ -1995,6 +2269,9 @@
       scheduleThumbHydration();
 
       dom.downloadAllBtn.disabled = state.images.length === 0;
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
       updateActionAvailability();
     }
 
@@ -2012,6 +2289,9 @@
       setStatus(`Selected: ${state.images[index].name}`);
       updateExportSizeEstimate();
       updateExportSummary();
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
       updateActionAvailability();
     }
 
@@ -2019,6 +2299,7 @@
       const img = state.images[index];
       if (!img) return;
       clearAdjustmentPreview();
+      delete state.bulkFormatOverrides[img.id];
       state.images.splice(index, 1);
 
       if (state.images.length === 0) {
@@ -2030,6 +2311,7 @@
         updateLiveImageInfo();
         setExportSavings(0, 0);
         updateExportSummary();
+        renderBulkFilesPanel();
         updateActionAvailability();
         return;
       }
@@ -2045,6 +2327,9 @@
       updateUndoRedoState();
       updateLiveImageInfo();
       updateExportSummary();
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
       updateActionAvailability();
     }
 
@@ -2754,7 +3039,7 @@
       requestThumbnailsRender(true);
       syncInputsFromImage();
       updateUndoRedoState();
-      setStatus('Redo complete');
+      setStatus('Redo complete');c
       updateExportSizeEstimate();
     }
 
@@ -2784,7 +3069,7 @@
       const ext = extensionForType(type);
       const dot = name.lastIndexOf('.');
       const base = dot > 0 ? name.slice(0, dot) : name;
-      return `${base}_edited.${ext}`;
+      return `${base}.${ext}`;
     }
 
     async function exportCanvasToBlob(canvas, type, quality) {
@@ -2827,19 +3112,21 @@
           await saveExportBlob(pdfBlob, buildFilename(img.name, 'application/pdf'));
           img.lastExportRevision = img.revision;
           setExportSavings(originalBytes, pdfBlob.size);
-          setStatus('Downloaded PDF');
-          showToast('Exported PDF successfully.', 'success');
+          setStatus('Export successful');
+          closeExportSheet();
+          showToast('Export successful.', 'success');
           updateExportSummary();
           return;
         }
 
         // If user keeps metadata, image unchanged, and type unchanged, return original file.
         if (!stripMetadata && !img.dirty && img.file && (img.mimeType || img.file.type) === type) {
-          await saveExportBlob(img.file, img.name);
+          await saveExportBlob(img.file, buildFilename(img.name, type));
           img.lastExportRevision = img.revision;
           setExportSavings(originalBytes, getOriginalBytesForImage(img));
-          setStatus('Downloaded original file (metadata preserved)');
-          showToast('Exported original file.', 'success');
+          setStatus('Export successful');
+          closeExportSheet();
+          showToast('Export successful.', 'success');
           updateExportSummary();
           return;
         }
@@ -2853,8 +3140,9 @@
         await saveExportBlob(blob, buildFilename(img.name, actualType));
         img.lastExportRevision = img.revision;
         setExportSavings(originalBytes, blob.size);
-        setStatus(stripMetadata ? 'Downloaded (metadata stripped)' : 'Downloaded edited image');
-        showToast('Export completed.', 'success');
+        setStatus('Export successful');
+        closeExportSheet();
+        showToast('Export successful.', 'success');
         updateExportSummary();
       } finally {
         dom.downloadBtn.disabled = false;
@@ -2862,10 +3150,89 @@
       }
     }
 
-    async function downloadAllZip() {
+    function getBulkSequentialBaseName() {
+      const cleaned = sanitizeFileName(state.bulkSequentialBase || '').replace(/\.[^.]+$/, '').trim();
+      return cleaned || 'Name';
+    }
+
+    function shouldUseSequentialZipNames() {
+      return state.bulkExportMode === 'zip' && state.bulkAdvancedMode === 'sequential';
+    }
+
+    function makeUniqueFilename(rawName, usedNames) {
+      if (!usedNames.has(rawName)) {
+        usedNames.add(rawName);
+        return rawName;
+      }
+      const dot = rawName.lastIndexOf('.');
+      const base = dot > 0 ? rawName.slice(0, dot) : rawName;
+      const ext = dot > 0 ? rawName.slice(dot) : '';
+      let index = 2;
+      let candidate = `${base}_${index}${ext}`;
+      while (usedNames.has(candidate)) {
+        index += 1;
+        candidate = `${base}_${index}${ext}`;
+      }
+      usedNames.add(candidate);
+      return candidate;
+    }
+
+    function buildBulkFilename(img, index, outputType, usedNames) {
+      const baseName = shouldUseSequentialZipNames()
+        ? `${getBulkSequentialBaseName()}${index + 1}`
+        : img.name;
+      const raw = buildFilename(baseName, outputType);
+      return makeUniqueFilename(raw, usedNames);
+    }
+
+    async function exportImageForType(img, outputType, quality, stripMetadata) {
+      if (outputType === 'application/pdf') {
+        const pdfBlob = await exportCanvasToPdfBlob(img.canvas, quality);
+        if (!pdfBlob) return null;
+        return {
+          blob: pdfBlob,
+          outputType: 'application/pdf'
+        };
+      }
+
+      if (!stripMetadata && !img.dirty && img.file && (img.mimeType || img.file.type) === outputType) {
+        return {
+          blob: img.file,
+          outputType
+        };
+      }
+
+      const encoded = await exportCanvasToBlob(img.canvas, outputType, quality);
+      if (!encoded || !encoded.blob) return null;
+      return {
+        blob: encoded.blob,
+        outputType: encoded.actualType || outputType
+      };
+    }
+
+    async function saveBulkEntriesAsMultiple(entries, total) {
+      let completed = 0;
+      for (const entry of entries) {
+        await saveExportBlob(entry.blob, entry.filename);
+        completed += 1;
+        setExportProgress(completed, total, 'Saving files...');
+        await nextFrame();
+      }
+    }
+
+    async function saveBulkEntriesAsZip(entries) {
+      const zipEngine = await ensureExportEngineLoaded();
+      const zip = await zipEngine.createZip();
+      const folder = zip.folder('liteedit_exports');
+      entries.forEach((entry) => {
+        folder.file(entry.filename, entry.blob);
+      });
+      return zip.generateAsync({ type: 'blob' });
+    }
+
+    async function downloadAllExports() {
       if (state.images.length === 0) return;
 
-      const type = getExportFormat();
       const quality = getQuality();
       const stripMetadata = dom.stripMetaInput.checked;
       const total = state.images.length;
@@ -2877,88 +3244,77 @@
       setExportProgress(0, total, 'Preparing...');
 
       try {
-        if (type === 'application/pdf') {
-          if (state.bulkPdfMode === 'combined') {
-            const pdfBlob = await exportAllToPdfBlob(state.images, quality, (current, limit) => {
-              setExportProgress(current, limit, 'Rendering combined PDF...');
-            });
-            if (!pdfBlob) {
-              setStatus('PDF export unavailable');
-              showToast('PDF export unavailable on this browser.', 'error');
-              return;
-            }
-            await saveExportBlob(pdfBlob, 'liteedit_exports.pdf');
-            state.images.forEach((img) => {
-              img.lastExportRevision = img.revision;
-            });
-            setExportSavings(totalOriginalBytes, pdfBlob.size);
-            setExportProgress(total, total, 'Combined PDF ready');
-            setStatus('PDF export complete');
-            showToast('Bulk PDF export complete.', 'success');
-            updateExportSummary();
+        const typesByImage = state.images.map((img) => getBulkExportFormatForImage(img));
+        const allPdf = typesByImage.length > 0 && typesByImage.every((entry) => entry === 'application/pdf');
+        if (allPdf && state.bulkPdfMode === 'combined') {
+          const pdfBlob = await exportAllToPdfBlob(state.images, quality, (current, limit) => {
+            setExportProgress(current, limit, 'Rendering combined PDF...');
+          });
+          if (!pdfBlob) {
+            setStatus('PDF export unavailable');
+            showToast('PDF export unavailable on this browser.', 'error');
             return;
           }
-
-          const zipEngine = await ensureExportEngineLoaded();
-          const zip = await zipEngine.createZip();
-          const folder = zip.folder('liteedit_pdf_exports');
-          let completed = 0;
-          let totalPdfBytes = 0;
-
-          for (const img of state.images) {
-            const pdfBlob = await exportCanvasToPdfBlob(img.canvas, quality);
-            if (pdfBlob) {
-              folder.file(buildFilename(img.name, 'application/pdf'), pdfBlob);
-              totalPdfBytes += pdfBlob.size;
-              img.lastExportRevision = img.revision;
-            }
-            completed += 1;
-            setExportProgress(completed, total, 'Rendering separate PDFs...');
-          }
-
-          const zipBlob = await zip.generateAsync({ type: 'blob' });
-          await saveExportBlob(zipBlob, 'liteedit_pdf_exports.zip');
-          setExportSavings(totalOriginalBytes, zipBlob.size || totalPdfBytes);
-          setExportProgress(total, total, 'PDF ZIP ready');
-          setStatus('PDF ZIP export complete');
-          showToast('Separate PDFs exported as ZIP.', 'success');
+          await saveExportBlob(pdfBlob, 'liteedit_exports.pdf');
+          state.images.forEach((img) => {
+            img.lastExportRevision = img.revision;
+          });
+          setExportSavings(totalOriginalBytes, pdfBlob.size);
+          setExportProgress(total, total, 'Combined PDF ready');
+          setStatus('Export successful');
+          closeExportSheet();
+          showToast('Export successful.', 'success');
           updateExportSummary();
           return;
         }
 
-        const zipEngine = await ensureExportEngineLoaded();
-        const zip = await zipEngine.createZip();
-        const folder = zip.folder('liteedit_exports');
+        const usedNames = new Set();
+        const entries = [];
         let completed = 0;
-
-        for (const img of state.images) {
-          if (!stripMetadata && !img.dirty && img.file && (img.mimeType || img.file.type) === type) {
-            folder.file(img.name, img.file);
-            completed += 1;
-            setExportProgress(completed, total, 'Adding files...');
-            img.lastExportRevision = img.revision;
-            continue;
-          }
-
-          const { blob, actualType } = await exportCanvasToBlob(img.canvas, type, quality);
-          if (blob) {
-            folder.file(buildFilename(img.name, actualType), blob);
+        for (let index = 0; index < state.images.length; index += 1) {
+          const img = state.images[index];
+          const outputType = typesByImage[index];
+          const exported = await exportImageForType(img, outputType, quality, stripMetadata);
+          if (exported && exported.blob) {
+            entries.push({
+              blob: exported.blob,
+              filename: buildBulkFilename(img, index, exported.outputType, usedNames)
+            });
             img.lastExportRevision = img.revision;
           }
           completed += 1;
-          setExportProgress(completed, total, 'Encoding files...');
+          setExportProgress(completed, total, 'Preparing files...');
         }
 
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        if (entries.length === 0) {
+          setStatus('Export failed');
+          showToast('No files were exported. Please retry.', 'error');
+          return;
+        }
+
+        if (state.bulkExportMode === 'multiple') {
+          await saveBulkEntriesAsMultiple(entries, total);
+          const totalBytes = entries.reduce((sum, entry) => sum + (entry.blob && entry.blob.size ? entry.blob.size : 0), 0);
+          setExportSavings(totalOriginalBytes, totalBytes);
+          setExportProgress(total, total, 'Export complete');
+          setStatus('Export successful');
+          closeExportSheet();
+          showToast('Export successful.', 'success');
+          updateExportSummary();
+          return;
+        }
+
+        const zipBlob = await saveBulkEntriesAsZip(entries);
         await saveExportBlob(zipBlob, 'liteedit_exports.zip');
         setExportSavings(totalOriginalBytes, zipBlob.size);
         setExportProgress(total, total, 'Export complete');
-        setStatus('ZIP download complete');
-        showToast('Bulk export complete.', 'success');
+        setStatus('Export successful');
+        closeExportSheet();
+        showToast('Export successful.', 'success');
         updateExportSummary();
       } catch (err) {
         console.error(err);
-        setStatus('ZIP export failed');
+        setStatus('Bulk export failed');
         showToast('Bulk export failed. Please retry.', 'error');
       } finally {
         dom.downloadAllBtn.disabled = false;
@@ -3028,34 +3384,19 @@
       }
     }
 
-    async function importDemoImage(button) {
-      if (!button) return;
-      const src = button.dataset.demoSrc;
-      if (!src) return;
-      const fileName = button.dataset.demoName || 'demo-image';
-      const forcedType = button.dataset.demoType || '';
-      const originalLabel = button.querySelector('span') ? button.querySelector('span').textContent : '';
-      button.disabled = true;
-      if (button.querySelector('span')) {
-        button.querySelector('span').textContent = 'Loading demo...';
-      }
-      setStatus('Loading demo image...');
+    async function tryAutoImportClipboardOnStart() {
+      if (state.images.length > 0) return;
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') return;
+      if (!navigator.permissions || typeof navigator.permissions.query !== 'function') return;
       try {
-        const response = await fetch(src, { cache: 'force-cache' });
-        if (!response.ok) throw new Error(`Failed to fetch demo (${response.status})`);
-        const blob = await response.blob();
-        const type = forcedType || blob.type || inferMimeTypeFromExtension(fileName) || 'image/png';
-        const file = new File([blob], fileName, { type });
-        await loadFilesIntoState([file], 'Demo import complete');
+        const permission = await navigator.permissions.query({ name: 'clipboard-read' });
+        if (!permission || permission.state !== 'granted') return;
+        const file = await readImageFileFromClipboardApi();
+        if (!file) return;
+        await loadFilesIntoState([file], 'Clipboard image loaded');
+        showToast('Loaded image from clipboard.', 'success');
       } catch (error) {
-        console.error('Demo import failed:', error);
-        showToast('Could not load demo image.', 'error');
-        setStatus('Demo import failed');
-      } finally {
-        button.disabled = false;
-        if (button.querySelector('span')) {
-          button.querySelector('span').textContent = originalLabel;
-        }
+        // Ignore clipboard permission or browser support errors silently.
       }
     }
 
@@ -3191,15 +3532,6 @@
       if (state.tool !== 'crop' && state.userMode === 'advanced') {
         const hitIndex = getTextDetectionIndexAtPoint(p);
         if (hitIndex >= 0) {
-          if (state.textSelectionIndex === hitIndex) {
-            if (beginTextBlockDrag(hitIndex, p)) {
-              state.drawing = true;
-              state.lastPoint = p;
-              dom.canvas.setPointerCapture(e.pointerId);
-              e.preventDefault();
-              return;
-            }
-          }
           selectTextDetection(hitIndex, true);
           state.drawing = false;
           state.lastPoint = null;
@@ -3442,13 +3774,6 @@
           void startCaptureFlow('photo');
         });
       }
-      if (dom.emptyDemoButtons.length > 0) {
-        dom.emptyDemoButtons.forEach((button) => {
-          button.addEventListener('click', () => {
-            void importDemoImage(button);
-          });
-        });
-      }
       dom.simpleModeBtn.addEventListener('click', () => applyUserMode('simple'));
       dom.advancedModeBtn.addEventListener('click', () => applyUserMode('advanced'));
       dom.openSettingsBtn.addEventListener('click', openSettingsSheet);
@@ -3524,6 +3849,75 @@
       dom.exportModeBulkBtn.addEventListener('click', () => applyExportMode('bulk'));
       dom.pdfBulkModeCombined.addEventListener('change', () => applyBulkPdfMode('combined'));
       dom.pdfBulkModeSeparate.addEventListener('change', () => applyBulkPdfMode('separate'));
+      if (dom.bulkExportModeInput) {
+        dom.bulkExportModeInput.addEventListener('change', () => {
+          applyBulkExportMode(dom.bulkExportModeInput.value);
+        });
+      }
+      if (dom.bulkAdvancedInput) {
+        dom.bulkAdvancedInput.addEventListener('change', () => {
+          applyBulkAdvancedMode(dom.bulkAdvancedInput.value);
+        });
+      }
+      if (dom.bulkShowImagesInput) {
+        dom.bulkShowImagesInput.addEventListener('change', () => {
+          applyBulkShowImages(dom.bulkShowImagesInput.value);
+        });
+      }
+      if (dom.bulkSequentialBaseInput) {
+        dom.bulkSequentialBaseInput.addEventListener('change', () => {
+          applyBulkSequentialBase(dom.bulkSequentialBaseInput.value);
+          updateExportSummary();
+        });
+      }
+      if (dom.bulkFilesPanel) {
+        dom.bulkFilesPanel.addEventListener('input', (event) => {
+          const target = event.target;
+          const row = target && target.closest ? target.closest('.bulk-file-row') : null;
+          if (!row) return;
+          const imageId = row.dataset.imageId;
+          const img = state.images.find((entry) => entry.id === imageId);
+          if (!img) return;
+          if (target.classList.contains('bulk-file-name-input')) {
+            const nextName = sanitizeFileName(target.value);
+            if (!nextName) return;
+            if (img.name !== nextName) {
+              img.name = nextName;
+              if (dom.renameInput && activeImage() && activeImage().id === img.id) {
+                dom.renameInput.value = img.name;
+              }
+              updateExportSummary();
+            }
+          }
+        });
+        dom.bulkFilesPanel.addEventListener('change', (event) => {
+          const target = event.target;
+          const row = target && target.closest ? target.closest('.bulk-file-row') : null;
+          if (!row) return;
+          const imageId = row.dataset.imageId;
+          const img = state.images.find((entry) => entry.id === imageId);
+          if (!img) return;
+          if (target.classList.contains('bulk-file-name-input')) {
+            const nextName = sanitizeFileName(target.value);
+            target.value = nextName || img.name;
+            if (nextName && img.name !== nextName) {
+              img.name = nextName;
+              if (dom.renameInput && activeImage() && activeImage().id === img.id) {
+                dom.renameInput.value = img.name;
+              }
+              requestThumbnailsRender(true);
+              updateExportSummary();
+            }
+            return;
+          }
+          if (target.classList.contains('bulk-file-format-select')) {
+            state.bulkFormatOverrides[img.id] = target.value;
+            updateBulkPdfModeVisibility();
+            updateExportSummary();
+            updateExportSizeEstimate();
+          }
+        });
+      }
       dom.cameraPhotoBtn.addEventListener('click', () => {
         closeCameraSheet();
         void startCaptureFlow('photo');
@@ -3727,19 +4121,17 @@
       }
 
       dom.downloadBtn.addEventListener('click', downloadCurrent);
-      dom.downloadAllBtn.addEventListener('click', downloadAllZip);
+      dom.downloadAllBtn.addEventListener('click', downloadAllExports);
       dom.formatInput.addEventListener('change', () => {
         updateBulkPdfModeVisibility();
+        if (shouldRenderBulkPanelNow()) {
+          renderBulkFilesPanel();
+        }
         updateExportSizeEstimate();
       });
       dom.qualityInput.addEventListener('input', updateExportSizeEstimate);
-      dom.applyRenameBtn.addEventListener('click', applyRename);
-      dom.renameInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          applyRename();
-        }
-      });
+      dom.renameInput.addEventListener('input', () => applyRename({ silent: true }));
+      dom.renameInput.addEventListener('change', () => applyRename());
       if (dom.textQuickInput) {
         dom.textQuickInput.addEventListener('input', () => {
           if (dom.replaceTextInput) {
@@ -3752,12 +4144,13 @@
             void applySmartTextReplace({
               replacement: dom.textQuickInput.value,
               autoFit: !(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked),
-              lockSourceSize: !!(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked)
+              lockSourceSize: !!(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked),
+              closeEditor: true
             });
           } else if (event.key === 'Escape') {
             event.preventDefault();
             state.textSelectionIndex = -1;
-            syncTextEditPanel();
+            syncTextEditPanel({ preserveNoSelection: true });
             renderCanvas();
           }
         });
@@ -3767,14 +4160,15 @@
           void applySmartTextReplace({
             replacement: dom.textQuickInput ? dom.textQuickInput.value : '',
             autoFit: !(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked),
-            lockSourceSize: !!(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked)
+            lockSourceSize: !!(dom.textQuickKeepSizeInput && dom.textQuickKeepSizeInput.checked),
+            closeEditor: true
           });
         });
       }
       if (dom.textQuickCloseBtn) {
         dom.textQuickCloseBtn.addEventListener('click', () => {
           state.textSelectionIndex = -1;
-          syncTextEditPanel();
+          syncTextEditPanel({ preserveNoSelection: true });
           renderCanvas();
         });
       }
@@ -3783,6 +4177,11 @@
           if (dom.textQuickInput && document.activeElement !== dom.textQuickInput) {
             dom.textQuickInput.value = dom.replaceTextInput.value;
           }
+        });
+        dom.replaceTextInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          void applySmartTextReplace({ replacement: dom.replaceTextInput.value });
         });
       }
 
@@ -3869,6 +4268,10 @@
       applyUserMode(state.userMode);
       applyExportMode(state.exportMode);
       applyBulkPdfMode(state.bulkPdfMode);
+      applyBulkExportMode(state.bulkExportMode);
+      applyBulkAdvancedMode(state.bulkAdvancedMode);
+      applyBulkShowImages(state.bulkShowImages);
+      applyBulkSequentialBase(state.bulkSequentialBase);
       applyThumbsVisibility(state.thumbsVisible);
       applyControlsVisibility(state.controlsVisible);
       applyToolsVisibility(state.toolsVisible);
@@ -3883,9 +4286,7 @@
       syncTextEditPanel();
       setStatus('Ready. Upload images to start.');
       scheduleLazyWarmups();
+      void tryAutoImportClipboardOnStart();
     }
 
     init();
-
-
-

@@ -34,20 +34,6 @@
         padding: 20px 14px 14px;
       }
 
-      .empty-demo-strip {
-        grid-template-columns: 1fr;
-      }
-
-      .demo-chip {
-        grid-template-columns: 58px 1fr;
-        align-items: center;
-        gap: 8px;
-      }
-
-      .demo-chip img {
-        height: 44px;
-      }
-
       .workspace {
         position: relative;
       }
@@ -358,6 +344,25 @@
       }
 
       .import-options {
+        grid-template-columns: 1fr;
+      }
+
+      .bulk-files-panel {
+        max-height: 240px;
+      }
+
+      .bulk-file-row {
+        grid-template-columns: 56px 1fr;
+        gap: 8px;
+        padding: 7px;
+      }
+
+      .bulk-file-thumb {
+        width: 56px;
+        height: 56px;
+      }
+
+      .bulk-file-config {
         grid-template-columns: 1fr;
       }
 

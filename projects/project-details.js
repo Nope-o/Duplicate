@@ -63,7 +63,14 @@
   const links = (Array.isArray(data.links) ? data.links : []).filter(
     (link) => link && typeof link.label === "string" && link.label.trim() && typeof link.href === "string" && link.href.trim()
   );
-  const hasOverview = typeof data.overview === "string" && data.overview.trim().length > 0;
+  const deliveryTracks = (Array.isArray(data.deliveryTracks) ? data.deliveryTracks : []).filter(
+    (track) => track && typeof track.name === "string" && track.name.trim().length > 0
+  );
+  const overviewSource = Array.isArray(data.overview)
+    ? data.overview
+    : (typeof data.overview === "string" ? [data.overview] : []);
+  const overviewItems = overviewSource.filter((item) => typeof item === "string" && item.trim().length > 0);
+  const hasOverview = overviewItems.length > 0;
   const hasRequirements = requirements.length > 0;
   const hasHighlights = highlights.length > 0;
   const hasMvp = mvp.length > 0;
@@ -71,8 +78,9 @@
   const hasCapabilityCard = hasMvp || hasStack;
   const hasLinks = links.length > 0;
   const hasGallery = gallery.length > 0;
+  const hasDeliveryTracks = deliveryTracks.length > 0;
   const heroFitClass = (data.heroFit || "contain").toLowerCase() === "cover" ? "hero-fit-cover" : "hero-fit-contain";
-  const headerIconSrc = data.headerIcon || data.heroImage || data.logoImage || "../../assets/images/logoo.webp";
+  const headerIconSrc = data.headerIcon || data.heroImage || data.logoImage || "../../assets/images/projects/shared/logo.webp";
   const categoryLabel = hasStack ? stack[0] : (data.visibility || "Project");
   const statusLabel = data.status || "Active";
   const headerSublineClean = `${categoryLabel} | ${statusLabel}`;
@@ -193,7 +201,11 @@
       ${hasOverview ? `
       <article class="card">
         <h2>Overview</h2>
-        <p>${data.overview}</p>
+        ${overviewItems.length === 1
+          ? `<p>${overviewItems[0]}</p>`
+          : `<ul class="list">
+          ${overviewItems.map((item) => `<li>${item}</li>`).join("")}
+        </ul>`}
       </article>` : ""}
       ${hasHighlights ? `
       <article class="card">
@@ -223,6 +235,49 @@
         </ul>
       </article>` : ""}
     </section>
+
+    ${hasDeliveryTracks ? `
+    <section class="grid">
+      ${deliveryTracks
+        .map((track) => {
+          const problems = Array.isArray(track.problems)
+            ? track.problems.filter((item) => typeof item === "string" && item.trim().length > 0)
+            : [];
+          const implementation = Array.isArray(track.implementation)
+            ? track.implementation.filter((item) => typeof item === "string" && item.trim().length > 0)
+            : [];
+          const outputs = Array.isArray(track.outputs)
+            ? track.outputs.filter((item) => typeof item === "string" && item.trim().length > 0)
+            : [];
+          const status = typeof track.status === "string" && track.status.trim().length > 0
+            ? track.status.trim()
+            : "N/A";
+          return `
+          <article class="card">
+            <h2>${track.name} (${status})</h2>
+            ${problems.length > 0 ? `
+              <h3 class="subheading">Problems Addressed</h3>
+              <ul class="list">
+                ${problems.map((item) => `<li>${item}</li>`).join("")}
+              </ul>
+            ` : ""}
+            ${implementation.length > 0 ? `
+              <h3 class="subheading">Implemented Solution</h3>
+              <ul class="list">
+                ${implementation.map((item) => `<li>${item}</li>`).join("")}
+              </ul>
+            ` : ""}
+            ${outputs.length > 0 ? `
+              <h3 class="subheading">Reports / Flows</h3>
+              <ul class="list">
+                ${outputs.map((item) => `<li>${item}</li>`).join("")}
+              </ul>
+            ` : ""}
+          </article>
+          `;
+        })
+        .join("")}
+    </section>` : ""}
 
     ${hasGallery ? `
     <section id="project-gallery" class="card gallery-card">

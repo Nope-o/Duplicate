@@ -753,7 +753,7 @@ body[data-theme="light"]::before {
   z-index: 0;
   background-image:
     linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(219, 234, 254, 0.2) 54%, rgba(186, 230, 253, 0.26) 100%),
-    url("../assets/images/sky.svg");
+    url("../assets/images/projects/shared/sky.svg");
   background-position: center center, center center;
   background-size: 100% 100%, cover;
   background-repeat: no-repeat, no-repeat;

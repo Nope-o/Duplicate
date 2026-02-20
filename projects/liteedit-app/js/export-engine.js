@@ -51,7 +51,7 @@ export function buildFilename(name, type) {
   const ext = extensionForType(type);
   const dot = name.lastIndexOf('.');
   const base = dot > 0 ? name.slice(0, dot) : name;
-  return `${base}_edited.${ext}`;
+  return `${base}.${ext}`;
 }
 
 function dataUrlToBlob(dataUrl) {

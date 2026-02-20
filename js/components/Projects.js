@@ -185,19 +185,23 @@ function Projects({ isDark }) {
   };
 
   const getStatusClasses = (status) => {
+    const normalizedStatus = typeof status === "string" ? status.trim().toLowerCase() : "";
+    const isInProgress = normalizedStatus === "under development" || normalizedStatus === "in progress" || normalizedStatus === "inprogress";
+    const isLive = normalizedStatus === "live";
+
     if (!isDark) {
-      if (status === "Under Development") {
+      if (isInProgress) {
         return "bg-amber-100 text-amber-700 border border-amber-300";
       }
-      if (status === "Live") {
+      if (isLive) {
         return "bg-blue-100 text-blue-700 border border-blue-300";
       }
       return "bg-slate-100 text-slate-700 border border-slate-300";
     }
-    if (status === "Under Development") {
+    if (isInProgress) {
       return "bg-amber-500/18 text-amber-200 shadow-[0_6px_16px_rgba(245,158,11,0.14)]";
     }
-    if (status === "Live") {
+    if (isLive) {
       return "bg-blue-500/18 text-blue-200 shadow-[0_6px_16px_rgba(59,130,246,0.15)]";
     }
     return "bg-slate-500/18 text-slate-200 shadow-[0_6px_16px_rgba(71,85,105,0.15)]";
