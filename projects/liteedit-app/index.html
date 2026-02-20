@@ -95,51 +95,60 @@
 
       <section class="panel workspace">
         <div class="toolbar">
-          <button class="tool-btn active" data-tool="pen" type="button" title="Pen" aria-label="Pen">&#9998;</button>
-          <button class="tool-btn" data-tool="highlighter" type="button" title="Highlighter" aria-label="Highlighter">&#128396;</button>
-          <button class="tool-btn" data-tool="blur" type="button">Blur Brush</button>
-          <button class="tool-btn" data-tool="crop" type="button">Crop</button>
-
-          <div id="sizeGroup" class="group">
-            <label for="brushSize">Size</label>
-            <input id="brushSize" type="range" min="2" max="80" value="18" />
-            <label id="brushSizeVal">18</label>
+          <div class="tool-row tool-row--modes" role="group" aria-label="Tool modes">
+            <button class="tool-btn active" data-tool="pen" type="button" title="Pen" aria-label="Pen">&#9998;</button>
+            <button class="tool-btn" data-tool="highlighter" type="button" title="Highlighter" aria-label="Highlighter">&#128396;</button>
+            <button class="tool-btn" data-tool="blur" type="button">Blur Brush</button>
+            <button class="tool-btn" data-tool="crop" type="button">Crop</button>
+            <button class="tool-btn" data-tool="hand" type="button" title="Pan canvas (toggle)" aria-label="Pan canvas (toggle)" aria-pressed="false">&#9995;</button>
           </div>
 
-          <div id="opacityGroup" class="group">
-            <label for="blurStrength">Opacity</label>
-            <input id="blurStrength" type="range" min="10" max="100" value="35" />
-            <label id="blurStrengthVal">35%</label>
+          <div class="tool-row tool-row--controls">
+            <div id="sizeGroup" class="group">
+              <label for="brushSize">Size</label>
+              <input id="brushSize" type="range" min="2" max="80" value="18" />
+              <label id="brushSizeVal">18</label>
+            </div>
+
+            <div id="opacityGroup" class="group">
+              <label for="blurStrength">Opacity</label>
+              <input id="blurStrength" type="range" min="10" max="100" value="35" />
+              <label id="blurStrengthVal">35%</label>
+            </div>
+
+            <div id="colorGroup" class="group">
+              <label for="highlighterColorInput">Color</label>
+              <select id="highlighterColorInput">
+                <option value="#facc15" selected>Yellow</option>
+                <option value="#34d399">Green</option>
+                <option value="#60a5fa">Blue</option>
+                <option value="#f472b6">Pink</option>
+                <option value="#fb923c">Orange</option>
+              </select>
+            </div>
+
+            <div id="cropOptionsGroup" class="group crop-only">
+              <label for="cropRatioInput">Ratio</label>
+              <select id="cropRatioInput">
+                <option value="free" selected>Free</option>
+                <option value="1:1">1:1</option>
+                <option value="4:3">4:3</option>
+                <option value="3:4">3:4</option>
+                <option value="4:5">4:5</option>
+                <option value="16:9">16:9</option>
+                <option value="9:16">9:16</option>
+                <option value="1.91:1">1.91:1</option>
+              </select>
+            </div>
           </div>
 
-          <div id="colorGroup" class="group">
-            <label for="highlighterColorInput">Color</label>
-            <select id="highlighterColorInput">
-              <option value="#facc15" selected>Yellow</option>
-              <option value="#34d399">Green</option>
-              <option value="#60a5fa">Blue</option>
-              <option value="#f472b6">Pink</option>
-              <option value="#fb923c">Orange</option>
-            </select>
+          <div class="tool-row tool-row--actions" role="group" aria-label="Tool actions">
+            <button id="undoBtn" class="btn" type="button">&#8630; Undo</button>
+            <button id="redoBtn" class="btn" type="button">&#8631; Redo</button>
+            <button id="applyCropBtn" class="btn crop-action" type="button">Apply Crop</button>
+            <button id="cancelCropBtn" class="btn crop-cancel" type="button">Cancel</button>
+            <button id="hideToolsBtn" class="mini-hide mobile-only" type="button" title="Hide tools">&#10005;</button>
           </div>
-
-          <div id="cropOptionsGroup" class="group crop-only">
-            <label for="cropRatioInput">Ratio</label>
-            <select id="cropRatioInput">
-              <option value="free" selected>Free</option>
-              <option value="1:1">1:1</option>
-              <option value="4:3">4:3</option>
-              <option value="3:4">3:4</option>
-              <option value="16:9">16:9</option>
-              <option value="9:16">9:16</option>
-            </select>
-          </div>
-
-          <button id="undoBtn" class="btn" type="button">&#8630; Undo</button>
-          <button id="redoBtn" class="btn" type="button">&#8631; Redo</button>
-          <button id="applyCropBtn" class="btn crop-action" type="button">Apply Crop</button>
-          <button id="cancelCropBtn" class="btn crop-cancel" type="button">Cancel</button>
-          <button id="hideToolsBtn" class="mini-hide mobile-only" type="button" title="Hide tools">&#10005;</button>
         </div>
 
         <div class="canvas-zone" id="canvasZone">
@@ -148,11 +157,17 @@
             <button id="zoomResetBtn" class="zoom-readout" type="button" title="Reset zoom">100%</button>
             <button id="zoomInBtn" class="mini-icon-btn" type="button" title="Zoom in">+</button>
           </div>
+          <div id="compareTools" class="compare-tools">
+            <button id="compareHoldBtn" class="compare-hold-btn" type="button" title="Hold to compare before/after" aria-label="Hold to compare original">Hold to Compare</button>
+            <button id="toggleSplitCompareBtn" class="compare-toggle-btn" type="button" aria-pressed="false" aria-label="Toggle split compare" title="Enable split compare">Split</button>
+            <input id="compareSplitSlider" class="compare-split-slider" type="range" min="10" max="90" value="50" aria-label="Split compare position" />
+          </div>
           <div class="history-fab" aria-label="History controls">
             <button id="floatingUndoBtn" class="mini-icon-btn" type="button" title="Undo" aria-label="Undo">&#8630;</button>
             <button id="floatingRedoBtn" class="mini-icon-btn" type="button" title="Redo" aria-label="Redo">&#8631;</button>
           </div>
-          <div id="liveImageInfo" class="live-info"></div>
+          <div id="liveImageInfo" class="live-info" role="status" aria-live="polite"></div>
+          <div id="largeImageBadge" class="large-image-badge" role="status" aria-live="polite" hidden></div>
           <div id="cropTip" class="crop-tip">Drag to create crop, adjust handles, then tap Apply Crop</div>
           <div id="textQuickEditor" class="text-quick-editor" aria-hidden="true">
             <div class="text-quick-row">
@@ -179,7 +194,7 @@
               <div class="empty-drop-hint">or drag and drop files directly in this area</div>
             </div>
           </div>
-          <canvas id="mainCanvas"></canvas>
+          <canvas id="mainCanvas" role="img" aria-label="Image editing canvas"></canvas>
         </div>
       </section>
 
@@ -193,7 +208,20 @@
           </div>
         </div>
         <div class="controls">
-          <div class="fieldset basic-only">
+          <div class="workflow-shortcuts" role="group" aria-label="Editing workflow shortcuts">
+            <button id="workflowImportBtn" class="btn" type="button">Import</button>
+            <button id="workflowEditBtn" class="btn" type="button">Edit</button>
+            <button id="workflowTextBtn" class="btn advanced-only" type="button">Text</button>
+            <button id="workflowExportBtn" class="btn btn-export" type="button">Export</button>
+          </div>
+          <nav class="section-nav" aria-label="Editor sections">
+            <a class="section-link" href="#quickEditSection">Quick</a>
+            <a class="section-link" href="#adjustmentsSection">Adjust</a>
+            <a class="section-link" href="#geometrySection">Geometry</a>
+            <a class="section-link advanced-only" href="#textSection">Text</a>
+            <a class="section-link" href="#outputSection">Output</a>
+          </nav>
+          <div id="quickEditSection" class="fieldset basic-only">
             <div class="legend">Quick Edit</div>
             <p class="simple-hint">Use sliders for fast preview, then export. Switch to Advanced for pro controls.</p>
             <div class="row">
@@ -202,7 +230,7 @@
             </div>
           </div>
 
-          <div class="fieldset">
+          <div id="adjustmentsSection" class="fieldset">
             <div class="legend">Adjustments</div>
             <div class="field">
               <label for="brightnessInput">Brightness (%)</label>
@@ -220,16 +248,130 @@
               <label for="globalBlurInput">Global Blur (px)</label>
               <input id="globalBlurInput" type="range" min="0" max="12" value="0" />
             </div>
-            <button id="applyAdjustBtn" class="btn" type="button">Apply Adjustments</button>
-            <button id="resetAdjustBtn" class="btn" type="button">Reset Slider Values</button>
+            <div class="row">
+              <button id="applyAdjustBtn" class="btn" type="button">Apply</button>
+              <button id="resetAdjustBtn" class="btn" type="button">Reset Slider Values</button>
+            </div>
+            <details class="advanced-options-drawer advanced-only">
+              <summary>Advanced options</summary>
+              <div class="advanced-options-content">
+                <div class="row">
+                  <button id="applyAdjustAllBtn" class="btn" type="button">Apply To All</button>
+                  <button id="updateAdjustStepBtn" class="btn" type="button">Update Step</button>
+                </div>
+                <div class="row">
+                  <button id="removeAdjustStepBtn" class="btn" type="button">Remove Step</button>
+                  <button id="clearAdjustStackBtn" class="btn" type="button">Clear Steps</button>
+                </div>
+                <div id="adjustmentStackList" class="adjustment-stack-list" aria-live="polite"></div>
+              </div>
+            </details>
           </div>
 
-          <div class="fieldset advanced-only">
+          <div id="geometrySection" class="fieldset">
+            <div class="legend">Geometry</div>
+            <div class="row">
+              <div class="field">
+                <label for="widthInput">Width (px)</label>
+                <input id="widthInput" type="number" min="1" placeholder="Width" />
+              </div>
+              <div class="field">
+                <label for="heightInput">Height (px)</label>
+                <input id="heightInput" type="number" min="1" placeholder="Height" />
+              </div>
+            </div>
+            <label class="inline"><input id="keepAspect" type="checkbox" checked /> Keep aspect ratio</label>
+            <div class="row">
+              <button id="applyResizeBtn" class="btn" type="button">Apply Resize</button>
+              <button id="applyCropPresetBtn" class="btn" type="button">Center Crop</button>
+            </div>
+            <details class="advanced-options-drawer advanced-only">
+              <summary>Advanced options</summary>
+              <div class="advanced-options-content">
+                <div class="row">
+                  <div class="field">
+                    <label for="resizeMethodInput">Resize Method</label>
+                    <select id="resizeMethodInput">
+                      <option value="lanczos3">High Quality (Lanczos style)</option>
+                      <option value="mitchell">Balanced (Mitchell style)</option>
+                      <option value="triangle">Fast (Triangle/Bilinear)</option>
+                      <option value="pixelated">Pixelated (Nearest Neighbor)</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="resizeFitInput">Resize Fit</label>
+                    <select id="resizeFitInput">
+                      <option value="stretch">Stretch to target</option>
+                      <option value="contain">Contain (keep full image)</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="socialPresetInput">Social Presets</label>
+                  <div class="row">
+                    <select id="socialPresetInput">
+                      <option value="none" selected>Select social size</option>
+                      <option value="instagram-post">Instagram Post (1080x1080)</option>
+                      <option value="instagram-story">Instagram Story (1080x1920)</option>
+                      <option value="youtube-thumb">YouTube Thumbnail (1280x720)</option>
+                      <option value="whatsapp-status">WhatsApp Status (1080x1920)</option>
+                      <option value="whatsapp-share">WhatsApp Share (1200x628)</option>
+                    </select>
+                    <button id="applySocialPresetBtn" class="btn" type="button">Apply</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="cropPresetInput">Crop Presets</label>
+                  <div class="row">
+                    <select id="cropPresetInput">
+                      <option value="free" selected>Free Crop</option>
+                      <option value="1:1">Square (1:1)</option>
+                      <option value="4:5">Portrait (4:5)</option>
+                      <option value="16:9">Landscape (16:9)</option>
+                      <option value="9:16">Story (9:16)</option>
+                      <option value="1.91:1">Wide (1.91:1)</option>
+                    </select>
+                    <button id="applyResizeAllBtn" class="btn" type="button">Resize All</button>
+                  </div>
+                </div>
+                <div class="row">
+                  <button id="rotateLeftBtn" class="btn" type="button">Rotate Left</button>
+                  <button id="rotateRightBtn" class="btn" type="button">Rotate Right</button>
+                </div>
+                <div class="row">
+                  <button id="flipXBtn" class="btn" type="button">Flip Horizontal</button>
+                  <button id="flipYBtn" class="btn" type="button">Flip Vertical</button>
+                </div>
+                <button id="resetImageBtn" class="btn" type="button">Reset to Original</button>
+              </div>
+            </details>
+          </div>
+
+          <div id="textSection" class="fieldset advanced-only">
             <div class="legend">Smart Text Edit (Beta)</div>
-            <p class="simple-hint">Detect text, then select a token and replace it while keeping original placement and style.</p>
+            <p class="simple-hint">Detect text, drag the white box to reposition, then replace while preserving style.</p>
             <div class="row">
               <button id="detectTextBtn" class="btn" type="button">Detect Text</button>
               <button id="clearTextBoxesBtn" class="btn" type="button">Clear Boxes</button>
+            </div>
+            <div class="field">
+              <label for="ocrLanguageInput">Text Detection Language</label>
+              <select id="ocrLanguageInput">
+                <option value="eng" selected>English</option>
+                <option value="eng+hin">English + Hindi</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="textConfidenceInput">Confidence Filter (<span id="textConfidenceVal">30</span>%+)</label>
+              <input id="textConfidenceInput" type="range" min="0" max="95" value="30" />
+            </div>
+            <div class="field">
+              <label for="textStrictnessInput">Style Matching</label>
+              <select id="textStrictnessInput">
+                <option value="strict">Strict</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="loose">Loose</option>
+              </select>
             </div>
             <div id="detectedTextField" class="field">
               <label for="detectedTextSelect">Detected Blocks</label>
@@ -237,10 +379,28 @@
                 <option value="">No text detected</option>
               </select>
             </div>
-          <div id="replaceTextField" class="field">
-            <label for="replaceTextInput">Replace With</label>
-            <input id="replaceTextInput" type="text" placeholder="Type replacement text" />
-          </div>
+            <div id="replaceTextField" class="field">
+              <label for="replaceTextInput">Replace With</label>
+              <input id="replaceTextInput" type="text" placeholder="Type replacement text" />
+            </div>
+            <div class="field">
+              <label for="textSizeScaleInput">Replacement Size (<span id="textSizeScaleVal">110</span>%)</label>
+              <input id="textSizeScaleInput" type="range" min="70" max="170" value="110" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="textBoxXInput">Box X</label>
+                <input id="textBoxXInput" type="number" min="0" step="1" placeholder="0" />
+              </div>
+              <div class="field">
+                <label for="textBoxYInput">Box Y</label>
+                <input id="textBoxYInput" type="number" min="0" step="1" placeholder="0" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="applyTextBoxPositionBtn" class="btn" type="button">Move Box</button>
+              <button id="centerTextBoxBtn" class="btn" type="button">Center Box</button>
+            </div>
             <div id="smartTextFontField" class="field">
               <label for="textFontFamilySelect">Font Family</label>
               <select id="textFontFamilySelect">
@@ -260,15 +420,51 @@
             </label>
             <button id="applyTextReplaceBtn" class="btn" type="button">Apply Text Replace</button>
             <p id="detectTextSupportNote" class="simple-hint">Detect text locally. Exact font family matching can vary by image.</p>
+
+            <div class="legend">Add Text Box</div>
+            <p class="simple-hint">Create new text and place it anywhere by tapping the canvas.</p>
+            <div class="field">
+              <label for="addTextInput">Text Content</label>
+              <input id="addTextInput" type="text" value="New text" placeholder="Write text to place on image" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="addTextSizeInput">Font Size (px)</label>
+                <input id="addTextSizeInput" type="number" min="10" max="220" value="36" />
+              </div>
+              <div class="field">
+                <label for="addTextColorInput">Text Color</label>
+                <input id="addTextColorInput" type="color" value="#111827" />
+              </div>
+            </div>
+            <label class="inline">
+              <input id="addTextBoxBgInput" type="checkbox" checked />
+              Add background box
+            </label>
+            <div class="row">
+              <div class="field">
+                <label for="addTextBgColorInput">Box Color</label>
+                <input id="addTextBgColorInput" type="color" value="#ffffff" />
+              </div>
+              <div class="field">
+                <label for="addTextBgOpacityInput">Box Opacity (<span id="addTextBgOpacityVal">78</span>%)</label>
+                <input id="addTextBgOpacityInput" type="range" min="15" max="100" value="78" />
+              </div>
+            </div>
+            <div class="row">
+              <button id="startAddTextBtn" class="btn" type="button">Place On Image</button>
+              <button id="cancelAddTextBtn" class="btn" type="button">Cancel Place</button>
+            </div>
+            <p id="addTextHint" class="simple-hint">Tap "Place On Image", then tap a position on canvas.</p>
           </div>
 
-          <div class="fieldset">
+          <div id="outputSection" class="fieldset">
             <div class="legend">Output</div>
-            <p class="simple-hint">Use the dedicated <strong>Export</strong> button in top-right for single or bulk export controls.</p>
+            <p class="simple-hint">Export controls live in the top bar. Use this shortcut when you are already editing.</p>
             <button id="openExportFromSettingsBtn" class="btn btn-export" type="button">Open Export</button>
           </div>
 
-          <div id="statusBox" class="status">Ready</div>
+          <div id="statusBox" class="status" role="status" aria-live="polite">Ready</div>
         </div>
       </section>
     </main>
@@ -350,49 +546,7 @@
               <label for="renameInput">File Name</label>
               <input id="renameInput" type="text" placeholder="Type final file name" />
             </div>
-            <div class="row">
-              <div class="field">
-                <label for="widthInput">Width (px)</label>
-                <input id="widthInput" type="number" min="1" placeholder="Width" />
-              </div>
-              <div class="field">
-                <label for="heightInput">Height (px)</label>
-                <input id="heightInput" type="number" min="1" placeholder="Height" />
-              </div>
-            </div>
-            <div class="row">
-              <div class="field">
-                <label for="resizeMethodInput">Resize Method</label>
-                <select id="resizeMethodInput">
-                  <option value="lanczos3">High Quality (Lanczos style)</option>
-                  <option value="mitchell">Balanced (Mitchell style)</option>
-                  <option value="triangle">Fast (Triangle/Bilinear)</option>
-                  <option value="pixelated">Pixelated (Nearest Neighbor)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label for="resizeFitInput">Resize Fit</label>
-                <select id="resizeFitInput">
-                  <option value="stretch">Stretch to target</option>
-                  <option value="contain">Contain (keep full image)</option>
-                </select>
-              </div>
-            </div>
-            <label class="inline"><input id="keepAspect" type="checkbox" checked /> Keep aspect ratio</label>
-            <button id="applyResizeBtn" class="btn" type="button">Apply Resize</button>
-          </div>
-
-          <div class="fieldset">
-            <div class="legend">Transform</div>
-            <div class="row">
-              <button id="rotateLeftBtn" class="btn" type="button">Rotate Left</button>
-              <button id="rotateRightBtn" class="btn" type="button">Rotate Right</button>
-            </div>
-            <div class="row">
-              <button id="flipXBtn" class="btn" type="button">Flip Horizontal</button>
-              <button id="flipYBtn" class="btn" type="button">Flip Vertical</button>
-            </div>
-            <button id="resetImageBtn" class="btn" type="button">Reset to Original</button>
+            <p class="simple-hint">Use Geometry controls in the right panel for resize/rotate/flip before export.</p>
           </div>
         </div>
 
@@ -419,6 +573,19 @@
               <input id="bulkSequentialBaseInput" type="text" value="Name" placeholder="Example: Name" />
               <p class="muted">ZIP output names become Base1, Base2, Base3...</p>
             </div>
+            <label class="inline">
+              <input id="bulkUseTemplateInput" type="checkbox" />
+              Use naming template
+            </label>
+            <div id="bulkTemplateGroup" class="field">
+              <label for="bulkNameTemplateInput">Name Template</label>
+              <input id="bulkNameTemplateInput" type="text" value="{name}_{n}" placeholder="{name}_{n}_{date}" />
+              <p class="muted">Tokens: {name}, {n}, {date}, {time}, {datetime}, {suffix}</p>
+            </div>
+            <div id="bulkSuffixGroup" class="field">
+              <label for="bulkNameSuffixInput">Suffix</label>
+              <input id="bulkNameSuffixInput" type="text" placeholder="edited" />
+            </div>
             <div class="field">
               <label for="bulkShowImagesInput">Bulk Image View</label>
               <select id="bulkShowImagesInput">
@@ -442,6 +609,16 @@
 
         <div class="fieldset">
           <div class="legend">Export Options</div>
+          <div class="field">
+            <label for="exportPresetInput">Preset</label>
+            <select id="exportPresetInput">
+              <option value="custom" selected>Custom</option>
+              <option value="web">Web Balanced</option>
+              <option value="whatsapp">WhatsApp Share</option>
+              <option value="instagram">Instagram Post</option>
+              <option value="print">Print Friendly</option>
+            </select>
+          </div>
           <div class="field">
             <label for="formatInput">Format</label>
             <select id="formatInput">
@@ -477,6 +654,7 @@
 
         <div class="export-actions-row">
           <button id="cancelExportSheetBtn" class="btn" type="button">Cancel</button>
+          <button id="cancelExportQueueBtn" class="btn" type="button" aria-live="polite">Stop Export</button>
           <button id="downloadBtn" class="btn" type="button">Export</button>
           <button id="downloadAllBtn" class="btn-primary" type="button">Export All</button>
         </div>
@@ -522,6 +700,9 @@
             <div class="row help-actions">
               <button id="openHelpSheetBtn" class="btn" type="button">Open Full Guide</button>
               <button id="contactDeveloperBtn" class="btn" type="button">Contact Developer</button>
+            </div>
+            <div class="row help-actions">
+              <button id="reportIssueBtn" class="btn" type="button">Report Issue</button>
             </div>
           </div>
           <div class="row">
@@ -591,6 +772,39 @@
           <div class="row">
             <button id="cancelHelpSheetBtn" class="btn" type="button">Done</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="reportIssueSheet" class="export-sheet report-sheet" aria-hidden="true">
+      <div class="export-card report-card" role="dialog" aria-modal="true" aria-labelledby="reportIssueTitle">
+        <div class="export-head">
+          <div id="reportIssueTitle" class="export-title">Report Issue Snapshot</div>
+          <button id="closeReportIssueBtn" class="mini-hide" type="button" title="Close">×</button>
+        </div>
+        <p class="export-sub">Copy and share this non-sensitive debug snapshot with support.</p>
+        <div class="fieldset">
+          <div class="legend">Snapshot</div>
+          <div class="report-include-card">
+            <div class="report-include-title">Includes</div>
+            <ul class="report-include-list">
+              <li>App mode, theme, viewport and browser environment</li>
+              <li>Image count, dimensions, size bands and processing flags</li>
+              <li>Export, OCR and performance configuration values</li>
+            </ul>
+            <div class="report-include-title report-include-title-exclude">Excludes</div>
+            <ul class="report-include-list">
+              <li>Image pixels, uploaded file contents, clipboard data</li>
+              <li>Entered text replacements and personal contact form content</li>
+            </ul>
+          </div>
+          <textarea id="reportIssueText" class="report-text" rows="10" readonly></textarea>
+          <p class="muted">No image pixels or personal content are included.</p>
+        </div>
+        <div class="export-actions-row">
+          <button id="copyReportIssueBtn" class="btn" type="button">Copy Snapshot</button>
+          <button id="downloadReportIssueBtn" class="btn" type="button">Download JSON</button>
+          <button id="cancelReportIssueBtn" class="btn" type="button">Done</button>
         </div>
       </div>
     </div>

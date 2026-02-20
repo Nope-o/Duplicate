@@ -17,7 +17,7 @@ export function bindLiteEditAdvanced({
   } = callbacks;
 
   dom.detectTextBtn.addEventListener('click', detectTextBlocks);
-  dom.clearTextBoxesBtn.addEventListener('click', () => clearTextDetectionsForImage());
+  dom.clearTextBoxesBtn.addEventListener('click', () => clearTextDetectionsForImage(undefined, { recordHistory: true }));
   dom.detectedTextSelect.addEventListener('change', () => {
     const selectedIndex = parseInt(dom.detectedTextSelect.value, 10);
     if (!Number.isFinite(selectedIndex)) return;
@@ -32,7 +32,7 @@ export function bindLiteEditAdvanced({
 
   dom.hideToolsBtn.addEventListener('click', () => applyToolsVisibility(false));
   dom.toolButtons.forEach((btn) => {
-    btn.addEventListener('click', () => setTool(btn.dataset.tool));
+    btn.addEventListener('click', () => setTool(btn.dataset.tool, { showStatus: true }));
   });
 
   dom.brushSize.addEventListener('input', () => {

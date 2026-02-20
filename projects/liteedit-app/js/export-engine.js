@@ -6,6 +6,49 @@ const VENDOR_CDN = {
 
 const vendorLoads = new Map();
 const encodeSupportCache = new Map();
+let exportWorker = null;
+let exportWorkerPromise = null;
+let exportWorkerQueue = new Map();
+
+function supportsExportWorker() {
+  return typeof Worker !== 'undefined'
+    && typeof OffscreenCanvas !== 'undefined'
+    && typeof createImageBitmap === 'function';
+}
+
+function getExportWorker() {
+  if (!supportsExportWorker()) return Promise.resolve(null);
+  if (exportWorker) return exportWorkerPromise || Promise.resolve(exportWorker);
+  if (exportWorkerPromise) return exportWorkerPromise;
+  exportWorkerPromise = new Promise((resolve, reject) => {
+    try {
+      exportWorker = new Worker(new URL('./export-worker.js', import.meta.url), { type: 'module' });
+      exportWorker.onmessage = (event) => {
+        const payload = event.data || {};
+        const entry = exportWorkerQueue.get(payload.id);
+        if (!entry) return;
+        exportWorkerQueue.delete(payload.id);
+        if (payload.error) {
+          entry.reject(new Error(payload.error));
+          return;
+        }
+        entry.resolve({ blob: payload.blob, actualType: payload.actualType || entry.type });
+      };
+      exportWorker.onerror = () => {
+        exportWorkerQueue.forEach((entry) => {
+          entry.reject(new Error('Export worker failed'));
+        });
+        exportWorkerQueue.clear();
+      };
+      resolve(exportWorker);
+    } catch (error) {
+      exportWorker = null;
+      exportWorkerPromise = null;
+      reject(error);
+    }
+  });
+  return exportWorkerPromise;
+}
 
 function loadScriptOnce(key, src, isReady) {
   if (isReady()) return Promise.resolve();
@@ -98,6 +141,18 @@ function encodeCanvasViaDataUrl(canvas, type, quality) {
 
 export function exportCanvasToBlob(canvas, type, quality) {
   return new Promise((resolve) => {
+    if (supportsExportWorker()) {
+      getExportWorker()
+        .then(async (worker) => {
+          if (!worker) throw new Error('Worker unavailable');
+          const bitmap = await createImageBitmap(canvas);
+          const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          exportWorkerQueue.set(id, { resolve, reject: () => resolve(encodeCanvasViaDataUrl(canvas, type, quality)), type });
+          worker.postMessage({ id, bitmap, type, quality }, [bitmap]);
+        })
+        .catch(() => resolve(encodeCanvasViaDataUrl(canvas, type, quality)));
+      return;
+    }
     if (typeof canvas.toBlob === 'function') {
       canvas.toBlob((blob) => {
         if (blob) {
@@ -157,7 +212,7 @@ export async function exportCanvasToPdfBlob(canvas, quality) {
   return doc.output('blob');
 }
 
-export async function exportAllToPdfBlob(images, quality, onProgress = null) {
+export async function exportAllToPdfBlob(images, quality, onProgress = null, shouldCancel = null) {
   await ensureExportVendorsLoaded();
   const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
   if (!jsPdfApi || images.length === 0) return null;
@@ -173,6 +228,9 @@ export async function exportAllToPdfBlob(images, quality, onProgress = null) {
   for (let index = 0; index < images.length; index += 1) {
     const img = images[index];
     const canvas = img.canvas;
+    if (typeof shouldCancel === 'function' && shouldCancel()) {
+      return null;
+    }
     if (index > 0) {
       doc.addPage(
         [canvas.width, canvas.height],

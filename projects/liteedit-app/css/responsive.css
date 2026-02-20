@@ -1,6 +1,6 @@
     @media (max-width: 1120px) {
       .layout {
-        grid-template-columns: 230px 1fr 290px;
+        grid-template-columns: minmax(210px, 250px) minmax(0, 1fr) minmax(280px, 320px);
       }
 
       .toolbar .group input[type="range"] {
@@ -11,7 +11,18 @@
     @media (max-width: 900px) {
       .layout {
         grid-template-columns: 1fr;
-        grid-template-rows: 132px minmax(280px, 1fr);
+        grid-template-rows: minmax(280px, 1fr) 132px;
+        grid-template-areas:
+          "workspace"
+          "uploads";
+      }
+
+      .workspace {
+        grid-area: workspace;
+      }
+
+      .left-panel {
+        grid-area: uploads;
       }
 
       .left-panel .thumbs {
@@ -45,13 +56,74 @@
         bottom: 8px;
         z-index: 12;
         display: none;
-        flex-wrap: wrap;
+        flex-direction: column;
+        flex-wrap: nowrap;
         border: 1px solid var(--border);
         border-radius: 12px;
         background: color-mix(in srgb, var(--surface) 95%, transparent);
         box-shadow: var(--shadow);
         max-height: min(48vh, 340px);
         overflow: auto;
+        padding: 8px;
+        gap: 6px;
+      }
+
+      .tool-row {
+        gap: 6px;
+      }
+
+      .tool-row--modes,
+      .tool-row--actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        padding-bottom: 2px;
+      }
+
+      .tool-row--modes::-webkit-scrollbar,
+      .tool-row--actions::-webkit-scrollbar {
+        display: none;
+      }
+
+      .tool-row--modes .tool-btn {
+        flex: 0 0 auto;
+        min-width: 48px;
+        min-height: 38px;
+        padding: 0 12px;
+        font-size: 0.82rem;
+      }
+
+      .tool-row--actions .btn,
+      .tool-row--actions .mini-hide {
+        flex: 0 0 auto;
+        min-height: 38px;
+      }
+
+      .tool-row--actions #undoBtn,
+      .tool-row--actions #redoBtn {
+        min-width: 86px;
+        font-weight: 700;
+      }
+
+      .toolbar .group {
+        min-height: 38px;
+        padding: 5px 8px;
+      }
+
+      .toolbar .group input[type="range"] {
+        width: 100px;
+      }
+
+      .section-nav {
+        position: sticky;
+        top: 0;
+        background: color-mix(in srgb, var(--surface) 94%, transparent);
+      }
+
+      .workflow-shortcuts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       .app.mobile-tools-open .toolbar {
@@ -84,6 +156,27 @@
 
       .right-panel .controls {
         padding-bottom: 14px;
+      }
+
+      .workflow-shortcuts .btn {
+        min-height: 34px;
+        font-size: 0.74rem;
+      }
+
+      .advanced-options-drawer {
+        padding: 7px;
+        border-radius: 9px;
+      }
+
+      .advanced-options-drawer > summary {
+        font-size: 0.71rem;
+      }
+
+      .large-image-badge {
+        top: 8px;
+        max-width: min(94%, 460px);
+        font-size: 0.68rem;
+        padding: 6px 10px;
       }
 
       .desktop-only {
@@ -195,7 +288,7 @@
       .layout {
         padding: 6px;
         gap: 6px;
-        grid-template-rows: 124px minmax(220px, 1fr);
+        grid-template-rows: minmax(220px, 1fr) 124px;
       }
 
       .toolbar {
@@ -254,6 +347,23 @@
         right: 10px;
         padding: 5px;
         gap: 5px;
+      }
+
+      .compare-tools {
+        top: 10px;
+        padding: 5px;
+        gap: 5px;
+      }
+
+      .compare-hold-btn,
+      .compare-toggle-btn {
+        min-height: 26px;
+        padding: 0 10px;
+        font-size: 0.68rem;
+      }
+
+      .compare-split-slider {
+        width: 72px;
       }
 
       .show-uploads-btn {
@@ -485,7 +595,28 @@
       }
 
       .layout {
-        grid-template-rows: 130px minmax(220px, 1fr);
+        grid-template-rows: minmax(220px, 1fr) 130px;
+      }
+
+      .tool-row--modes .tool-btn {
+        min-width: 44px;
+        min-height: 36px;
+        padding: 0 10px;
+        font-size: 0.78rem;
+      }
+
+      .tool-row--actions .btn,
+      .tool-row--actions .mini-hide {
+        min-height: 36px;
+      }
+
+      .tool-row--actions #undoBtn,
+      .tool-row--actions #redoBtn {
+        min-width: 80px;
+      }
+
+      .toolbar .group {
+        min-height: 36px;
       }
 
       .toolbar {
@@ -494,5 +625,13 @@
 
       .right-panel {
         bottom: calc(74px + env(safe-area-inset-bottom));
+      }
+
+      .compare-tools {
+        top: 9px;
+      }
+
+      .compare-split-slider {
+        width: 62px;
       }
     }

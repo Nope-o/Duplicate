@@ -5,29 +5,74 @@
     } from './app-core-utils.js';
     import {
       isLikelyImageFile,
-      normalizeImageMimeType,
-      sniffImageMimeType
+      normalizeImageMimeType
     } from './app-core-file-utils.js';
+    import {
+      ADJUST_TILE_SIZE,
+      HISTORY_LIMIT,
+      LARGE_IMAGE_PIXEL_THRESHOLD,
+      MAX_FILES,
+      MAX_TOTAL_PIXELS,
+      SOCIAL_PRESETS,
+      TOOL_PRESETS
+    } from './app-core-constants.js';
+    import {
+      canvasToBlobSafe,
+      decodeImageFile,
+      loadImageElementFromBlob,
+      nextFrame,
+      releaseDrawable
+    } from './app-core-media-utils.js';
+    import {
+      createSessionController
+    } from './app-core-session-controller.js';
+    import {
+      createTextController
+    } from './app-core-text-controller.js';
+    import {
+      createExportController
+    } from './app-core-export-controller.js';
+    import {
+      createModalController
+    } from './app-core-modal-controller.js';
+    import {
+      createCanvasInteractionController
+    } from './app-core-canvas-interaction-controller.js';
+    import {
+      createUiFlowController
+    } from './app-core-ui-flow-controller.js';
+    import {
+      createKeyboardController
+    } from './app-core-keyboard-controller.js';
 
-    const MAX_FILES = 20;
-    const HISTORY_LIMIT = 20;
+    const CONTROL_COLLAPSE_STORAGE_KEY = 'liteedit_collapsed_sections_v1';
 
     const state = {
       images: [],
       selectedIndex: -1,
       tool: 'pen',
+      lastNonHandTool: 'pen',
       drawing: false,
       cropStart: null,
       cropRect: null,
       cropInteraction: null,
       lastPoint: null,
       cameraPreset: 'photo',
+      comparePreviewActive: false,
+      splitCompareActive: localStorage.getItem('liteedit_split_compare_active') === 'true',
+      splitComparePosition: clamp(parseInt(localStorage.getItem('liteedit_split_compare_position') || '50', 10) || 50, 10, 90),
+      keyboardPanActive: false,
+      canvasPan: null,
       exportMode: localStorage.getItem('liteedit_export_mode') || 'single',
+      exportPreset: localStorage.getItem('liteedit_export_preset') || 'custom',
       bulkPdfMode: localStorage.getItem('liteedit_bulk_pdf_mode') || 'combined',
       bulkExportMode: localStorage.getItem('liteedit_bulk_export_mode') || 'zip',
       bulkAdvancedMode: localStorage.getItem('liteedit_bulk_advanced_mode') || 'none',
       bulkSequentialBase: localStorage.getItem('liteedit_bulk_sequential_base') || 'Name',
       bulkShowImages: localStorage.getItem('liteedit_bulk_show_images') || 'show',
+      bulkUseNameTemplate: localStorage.getItem('liteedit_bulk_use_name_template') === 'true',
+      bulkNameTemplate: localStorage.getItem('liteedit_bulk_name_template') || '{name}_{n}',
+      bulkNameSuffix: localStorage.getItem('liteedit_bulk_name_suffix') || '',
       bulkFormatOverrides: {},
       userMode: localStorage.getItem('liteedit_user_mode') || 'simple',
       importOptimize: localStorage.getItem('liteedit_import_optimize') !== 'false',
@@ -36,6 +81,7 @@
       resizeFitMethod: localStorage.getItem('liteedit_resize_fit_method') || 'stretch',
       activeModal: null,
       modalFocusOrigin: null,
+      sessionRestoring: false,
       adjustmentPreview: {
         active: false,
         imageId: null,
@@ -46,7 +92,11 @@
       theme: localStorage.getItem('liteedit_theme') || 'light',
       detectingText: false,
       textSelectionIndex: -1,
+      adjustmentStepSelectionIndex: -1,
       textFontFamily: localStorage.getItem('liteedit_text_font_family') || 'auto',
+      textConfidenceThreshold: clamp(parseInt(localStorage.getItem('liteedit_text_confidence_threshold') || '30', 10) || 30, 0, 95),
+      textStrictness: localStorage.getItem('liteedit_text_strictness') || 'balanced',
+      ocrLanguage: localStorage.getItem('liteedit_ocr_language') || 'eng',
       penColor: localStorage.getItem('liteedit_pen_color') || '#60a5fa',
       highlighterColor: localStorage.getItem('liteedit_highlighter_color') || '#facc15',
       cropRatio: localStorage.getItem('liteedit_crop_ratio') || 'free',
@@ -69,8 +119,17 @@
         pinchStartDistance: 0,
         pinchStartZoom: 1
       },
+      renderBudget: {
+        pending: false,
+        scheduled: false,
+        timerId: 0,
+        lastRenderTs: 0,
+        minIntervalMs: 48
+      },
       textQuickSelectionIndex: -1,
-      textDrag: null
+      textDrag: null,
+      textReplaceSizeScale: clamp(parseInt(localStorage.getItem('liteedit_text_replace_scale') || '110', 10) || 110, 70, 170),
+      textAddPlacementActive: false
     };
 
     const dom = {
@@ -109,6 +168,11 @@
       bulkAdvancedInput: document.getElementById('bulkAdvancedInput'),
       bulkSequentialGroup: document.getElementById('bulkSequentialGroup'),
       bulkSequentialBaseInput: document.getElementById('bulkSequentialBaseInput'),
+      bulkUseTemplateInput: document.getElementById('bulkUseTemplateInput'),
+      bulkTemplateGroup: document.getElementById('bulkTemplateGroup'),
+      bulkNameTemplateInput: document.getElementById('bulkNameTemplateInput'),
+      bulkSuffixGroup: document.getElementById('bulkSuffixGroup'),
+      bulkNameSuffixInput: document.getElementById('bulkNameSuffixInput'),
       bulkShowImagesInput: document.getElementById('bulkShowImagesInput'),
       bulkFilesPanel: document.getElementById('bulkFilesPanel'),
       bulkPdfOptions: document.getElementById('bulkPdfOptions'),
@@ -135,6 +199,10 @@
       countInfo: document.getElementById('countInfo'),
       canvas: document.getElementById('mainCanvas'),
       canvasZone: document.getElementById('canvasZone'),
+      compareTools: document.getElementById('compareTools'),
+      compareHoldBtn: document.getElementById('compareHoldBtn'),
+      toggleSplitCompareBtn: document.getElementById('toggleSplitCompareBtn'),
+      compareSplitSlider: document.getElementById('compareSplitSlider'),
       zoomInBtn: document.getElementById('zoomInBtn'),
       zoomOutBtn: document.getElementById('zoomOutBtn'),
       zoomResetBtn: document.getElementById('zoomResetBtn'),
@@ -147,6 +215,11 @@
       floatingThumbsBtn: document.getElementById('floatingThumbsBtn'),
       floatingToolsBtn: document.getElementById('floatingToolsBtn'),
       floatingControlsBtn: document.getElementById('floatingControlsBtn'),
+      workflowImportBtn: document.getElementById('workflowImportBtn'),
+      workflowEditBtn: document.getElementById('workflowEditBtn'),
+      workflowTextBtn: document.getElementById('workflowTextBtn'),
+      workflowExportBtn: document.getElementById('workflowExportBtn'),
+      sectionNav: document.querySelector('.section-nav'),
       themeLightBtn: document.getElementById('themeLightBtn'),
       themeDarkBtn: document.getElementById('themeDarkBtn'),
       importOptimizeInput: document.getElementById('importOptimizeInput'),
@@ -174,7 +247,17 @@
       saturationInput: document.getElementById('saturationInput'),
       globalBlurInput: document.getElementById('globalBlurInput'),
       applyAdjustBtn: document.getElementById('applyAdjustBtn'),
+      applyAdjustAllBtn: document.getElementById('applyAdjustAllBtn'),
+      updateAdjustStepBtn: document.getElementById('updateAdjustStepBtn'),
+      removeAdjustStepBtn: document.getElementById('removeAdjustStepBtn'),
+      clearAdjustStackBtn: document.getElementById('clearAdjustStackBtn'),
+      adjustmentStackList: document.getElementById('adjustmentStackList'),
       resetAdjustBtn: document.getElementById('resetAdjustBtn'),
+      applyResizeAllBtn: document.getElementById('applyResizeAllBtn'),
+      socialPresetInput: document.getElementById('socialPresetInput'),
+      applySocialPresetBtn: document.getElementById('applySocialPresetBtn'),
+      cropPresetInput: document.getElementById('cropPresetInput'),
+      applyCropPresetBtn: document.getElementById('applyCropPresetBtn'),
       rotateLeftBtn: document.getElementById('rotateLeftBtn'),
       rotateRightBtn: document.getElementById('rotateRightBtn'),
       flipXBtn: document.getElementById('flipXBtn'),
@@ -187,14 +270,34 @@
       formatInput: document.getElementById('formatInput'),
       renameInput: document.getElementById('renameInput'),
       detectTextBtn: document.getElementById('detectTextBtn'),
+      ocrLanguageInput: document.getElementById('ocrLanguageInput'),
+      textConfidenceInput: document.getElementById('textConfidenceInput'),
+      textConfidenceVal: document.getElementById('textConfidenceVal'),
+      textStrictnessInput: document.getElementById('textStrictnessInput'),
       clearTextBoxesBtn: document.getElementById('clearTextBoxesBtn'),
       detectedTextSelect: document.getElementById('detectedTextSelect'),
       replaceTextInput: document.getElementById('replaceTextInput'),
+      textSizeScaleInput: document.getElementById('textSizeScaleInput'),
+      textSizeScaleVal: document.getElementById('textSizeScaleVal'),
+      textBoxXInput: document.getElementById('textBoxXInput'),
+      textBoxYInput: document.getElementById('textBoxYInput'),
+      applyTextBoxPositionBtn: document.getElementById('applyTextBoxPositionBtn'),
+      centerTextBoxBtn: document.getElementById('centerTextBoxBtn'),
       smartTextFontField: document.getElementById('smartTextFontField'),
       textFontFamilySelect: document.getElementById('textFontFamilySelect'),
       smartTextAutoSizeInput: document.getElementById('smartTextAutoSizeInput'),
       applyTextReplaceBtn: document.getElementById('applyTextReplaceBtn'),
       detectTextSupportNote: document.getElementById('detectTextSupportNote'),
+      addTextInput: document.getElementById('addTextInput'),
+      addTextSizeInput: document.getElementById('addTextSizeInput'),
+      addTextColorInput: document.getElementById('addTextColorInput'),
+      addTextBoxBgInput: document.getElementById('addTextBoxBgInput'),
+      addTextBgColorInput: document.getElementById('addTextBgColorInput'),
+      addTextBgOpacityInput: document.getElementById('addTextBgOpacityInput'),
+      addTextBgOpacityVal: document.getElementById('addTextBgOpacityVal'),
+      startAddTextBtn: document.getElementById('startAddTextBtn'),
+      cancelAddTextBtn: document.getElementById('cancelAddTextBtn'),
+      addTextHint: document.getElementById('addTextHint'),
       textQuickEditor: document.getElementById('textQuickEditor'),
       textQuickInput: document.getElementById('textQuickInput'),
       textQuickApplyBtn: document.getElementById('textQuickApplyBtn'),
@@ -204,6 +307,7 @@
       quickResetBtn: document.getElementById('quickResetBtn'),
       qualityInput: document.getElementById('qualityInput'),
       stripMetaInput: document.getElementById('stripMetaInput'),
+      exportPresetInput: document.getElementById('exportPresetInput'),
       exportSizeInfo: document.getElementById('exportSizeInfo'),
       exportSummary: document.getElementById('exportSummary'),
       exportProgress: document.getElementById('exportProgress'),
@@ -212,9 +316,18 @@
       exportSavings: document.getElementById('exportSavings'),
       exportSavingsFill: document.getElementById('exportSavingsFill'),
       exportSavingsText: document.getElementById('exportSavingsText'),
+      largeImageBadge: document.getElementById('largeImageBadge'),
       toastStack: document.getElementById('toastStack'),
+      cancelExportQueueBtn: document.getElementById('cancelExportQueueBtn'),
       downloadBtn: document.getElementById('downloadBtn'),
       downloadAllBtn: document.getElementById('downloadAllBtn'),
+      reportIssueBtn: document.getElementById('reportIssueBtn'),
+      reportIssueSheet: document.getElementById('reportIssueSheet'),
+      reportIssueText: document.getElementById('reportIssueText'),
+      copyReportIssueBtn: document.getElementById('copyReportIssueBtn'),
+      downloadReportIssueBtn: document.getElementById('downloadReportIssueBtn'),
+      closeReportIssueBtn: document.getElementById('closeReportIssueBtn'),
+      cancelReportIssueBtn: document.getElementById('cancelReportIssueBtn'),
       toolButtons: Array.from(document.querySelectorAll('.tool-btn'))
     };
 
@@ -225,169 +338,333 @@
     let pendingThumbHydration = [];
     let exportEngineModule = null;
     let exportEnginePromise = null;
+    let exportQueue = null;
     let textToolsModule = null;
     let textToolsPromise = null;
     let canvasToolsModule = null;
     let canvasToolsPromise = null;
+    let sessionStoreModule = null;
+    let sessionStorePromise = null;
     let importJobToken = 0;
-    let liveCaptureStream = null;
-    let liveCapturePreset = 'photo';
-
-    const TOOL_PRESETS = {
-      pen: { size: 7, opacity: 100, color: '#60a5fa' },
-      highlighter: { size: 24, opacity: 35, color: '#facc15' },
-      blur: { size: 22, opacity: 60, color: '#60a5fa' }
-    };
-
-
-    function releaseDrawable(drawable) {
-      if (drawable && typeof drawable.close === 'function') {
-        drawable.close();
-      }
-    }
-
-    function nextFrame() {
-      return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-    }
-
-    async function loadImageElementFromBlob(blob) {
-      const objectUrl = URL.createObjectURL(blob);
-      try {
-        return await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.decoding = 'async';
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error('Image loading failed'));
-          img.src = objectUrl;
-          if (typeof img.decode === 'function') {
-            img.decode().then(() => resolve(img)).catch(() => {});
-          }
-        });
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-      }
-    }
-
-    async function normalizeSvgBlob(blob) {
-      try {
-        const text = await blob.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'image/svg+xml');
-        const svg = doc.documentElement;
-        if (!svg || svg.nodeName.toLowerCase() !== 'svg') return blob;
-        if (svg.hasAttribute('width') && svg.hasAttribute('height')) return blob;
-        const viewBox = svg.getAttribute('viewBox');
-        if (!viewBox) return blob;
-        const values = viewBox.trim().split(/[\s,]+/).map(Number);
-        if (values.length < 4 || !Number.isFinite(values[2]) || !Number.isFinite(values[3])) return blob;
-        svg.setAttribute('width', String(values[2]));
-        svg.setAttribute('height', String(values[3]));
-        const serialized = new XMLSerializer().serializeToString(doc);
-        return new Blob([serialized], { type: 'image/svg+xml' });
-      } catch (error) {
-        return blob;
-      }
-    }
-
-    async function decodeImageFile(file) {
-      const sniffedMime = await sniffImageMimeType(file);
-      const mimeType = normalizeImageMimeType(file, sniffedMime);
-      if (!mimeType.startsWith('image/')) {
-        throw new Error('Unsupported file type');
-      }
-
-      const decodeBlob = mimeType === 'image/svg+xml'
-        ? await normalizeSvgBlob(file)
-        : file;
-      let drawable = null;
-
-      if (typeof createImageBitmap === 'function') {
-        try {
-          drawable = await createImageBitmap(decodeBlob);
-        } catch (error) {
-          drawable = null;
-        }
-      }
-
-      if (!drawable) {
-        drawable = await loadImageElementFromBlob(decodeBlob);
-      }
-
-      const width = drawable.width || drawable.naturalWidth || 0;
-      const height = drawable.height || drawable.naturalHeight || 0;
-      if (!width || !height) {
-        releaseDrawable(drawable);
-        throw new Error('Could not read image dimensions');
-      }
-
-      return {
-        drawable,
-        mimeType,
-        sourceW: width,
-        sourceH: height
-      };
-    }
+    let sessionController = null;
+    let textController = null;
+    let exportController = null;
+    let modalController = null;
+    let canvasInteractionController = null;
+    let uiFlowController = null;
+    let keyboardController = null;
+    let collapsedSectionState = {};
 
     function setStatus(text) {
       dom.statusBox.textContent = text;
     }
 
+    function dismissToast(toastEl) {
+      if (!toastEl || toastEl.dataset.leaving === 'true') return;
+      toastEl.dataset.leaving = 'true';
+      toastEl.classList.add('leaving');
+      window.setTimeout(() => {
+        if (toastEl && toastEl.parentNode) {
+          toastEl.remove();
+        }
+      }, 170);
+    }
+
     function showToast(message, type = 'info', duration = 2600) {
       if (!dom.toastStack) return;
+      const safeMessage = String(message || '').trim();
+      if (!safeMessage) return;
+      const safeType = type === 'error' || type === 'success' ? type : 'info';
+      const duplicate = Array.from(dom.toastStack.querySelectorAll('.toast')).find(
+        (toastEl) => toastEl.dataset.toastMessage === safeMessage && toastEl.dataset.toastType === safeType
+      );
+      if (duplicate) {
+        dismissToast(duplicate);
+      }
       const toast = document.createElement('div');
-      toast.className = `toast ${type}`;
-      toast.textContent = message;
+      toast.className = `toast ${safeType}`;
+      toast.dataset.toastMessage = safeMessage;
+      toast.dataset.toastType = safeType;
+      toast.setAttribute('role', safeType === 'error' ? 'alert' : 'status');
+      toast.setAttribute('aria-live', safeType === 'error' ? 'assertive' : 'polite');
+      toast.setAttribute('aria-atomic', 'true');
+
+      const messageNode = document.createElement('div');
+      messageNode.className = 'toast-message';
+      messageNode.textContent = safeMessage;
+      toast.appendChild(messageNode);
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'toast-close';
+      closeBtn.setAttribute('aria-label', 'Dismiss notification');
+      closeBtn.textContent = '×';
+      toast.appendChild(closeBtn);
+
+      let removeTimer = null;
+      const clearRemoveTimer = () => {
+        if (removeTimer) {
+          clearTimeout(removeTimer);
+          removeTimer = null;
+        }
+      };
+      const startRemoveTimer = (timeoutMs = duration) => {
+        clearRemoveTimer();
+        removeTimer = window.setTimeout(() => {
+          dismissToast(toast);
+        }, Math.max(600, timeoutMs));
+      };
+
+      closeBtn.addEventListener('click', () => {
+        clearRemoveTimer();
+        dismissToast(toast);
+      });
+      toast.addEventListener('mouseenter', clearRemoveTimer);
+      toast.addEventListener('mouseleave', () => startRemoveTimer(1200));
+      toast.addEventListener('focusin', clearRemoveTimer);
+      toast.addEventListener('focusout', () => startRemoveTimer(1200));
+
       dom.toastStack.appendChild(toast);
-      window.setTimeout(() => {
-        toast.remove();
-      }, duration);
+      startRemoveTimer(duration);
+
+      const allToasts = Array.from(dom.toastStack.querySelectorAll('.toast'));
+      if (allToasts.length > 4) {
+        allToasts.slice(0, allToasts.length - 4).forEach((item) => dismissToast(item));
+      }
+    }
+
+    function readCollapsedSectionState() {
+      try {
+        const raw = localStorage.getItem(CONTROL_COLLAPSE_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return {};
+        return parsed;
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function persistCollapsedSectionState() {
+      try {
+        localStorage.setItem(CONTROL_COLLAPSE_STORAGE_KEY, JSON.stringify(collapsedSectionState));
+      } catch (error) {}
+    }
+
+    function setControlSectionCollapsed(section, collapsed, { persist = true } = {}) {
+      if (!section) return;
+      const body = section.querySelector('.fieldset-body');
+      const toggle = section.querySelector('.legend-toggle');
+      if (!body || !toggle) return;
+      const next = !!collapsed;
+      section.classList.toggle('is-collapsed', next);
+      body.hidden = next;
+      toggle.setAttribute('aria-expanded', next ? 'false' : 'true');
+      const icon = toggle.querySelector('.legend-toggle-icon');
+      if (icon) {
+        icon.textContent = next ? '+' : '−';
+      }
+      if (persist && section.id) {
+        collapsedSectionState[section.id] = next;
+        persistCollapsedSectionState();
+      }
+    }
+
+    function openControlSection(sectionId, { ensureAdvanced = false } = {}) {
+      if (ensureAdvanced && state.userMode !== 'advanced') {
+        applyUserMode('advanced');
+      }
+      const section = document.getElementById(sectionId);
+      if (!section) return;
+      setControlSectionCollapsed(section, false);
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function initializeControlSections() {
+      collapsedSectionState = readCollapsedSectionState();
+      const sections = Array.from(document.querySelectorAll('.right-panel .controls .fieldset[id]'));
+      const compactLayout = window.matchMedia('(max-width: 900px)').matches;
+      sections.forEach((section, index) => {
+        if (section.dataset.collapseReady === 'true') return;
+        const legend = section.querySelector(':scope > .legend');
+        if (!legend) return;
+        const legendText = legend.textContent || section.id;
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'legend-toggle';
+        toggle.innerHTML = `
+          <span class="legend">${legendText}</span>
+          <span class="legend-toggle-icon" aria-hidden="true">−</span>
+        `;
+        legend.replaceWith(toggle);
+
+        const body = document.createElement('div');
+        body.className = 'fieldset-body';
+        while (toggle.nextSibling) {
+          body.appendChild(toggle.nextSibling);
+        }
+        section.appendChild(body);
+
+        let collapsed = false;
+        if (Object.prototype.hasOwnProperty.call(collapsedSectionState, section.id)) {
+          collapsed = !!collapsedSectionState[section.id];
+        } else if (compactLayout) {
+          collapsed = index > 1 || section.id === 'outputSection';
+          if (section.id === 'quickEditSection') collapsed = false;
+        }
+        setControlSectionCollapsed(section, collapsed, { persist: false });
+
+        toggle.addEventListener('click', () => {
+          setControlSectionCollapsed(section, !section.classList.contains('is-collapsed'));
+        });
+        section.dataset.collapseReady = 'true';
+      });
+
+      if (dom.sectionNav && dom.sectionNav.dataset.collapseBound !== 'true') {
+        dom.sectionNav.addEventListener('click', (event) => {
+          const link = event.target && event.target.closest ? event.target.closest('a[href^="#"]') : null;
+          if (!link) return;
+          const target = document.querySelector(link.getAttribute('href'));
+          if (target && target.classList.contains('fieldset')) {
+            setControlSectionCollapsed(target, false);
+          }
+        });
+        dom.sectionNav.dataset.collapseBound = 'true';
+      }
+    }
+
+    function getSessionController() {
+      if (!sessionController) {
+        sessionController = createSessionController({
+          state,
+          clamp,
+          normalizeTextStrictness,
+          ensureSessionStoreLoaded,
+          cloneAdjustmentStep,
+          canvasSnapshot,
+          loadImageElementFromBlob,
+          canvasToBlobSafe,
+          sanitizeFileName,
+          largeImagePixelThreshold: LARGE_IMAGE_PIXEL_THRESHOLD,
+          setStatus,
+          showToast,
+          selectImage,
+          requestThumbnailsRender,
+          updateActionAvailability,
+          renderCanvas
+        });
+      }
+      return sessionController;
+    }
+
+    async function clearSessionSnapshot() {
+      await getSessionController().clearSessionSnapshot();
+    }
+
+    function scheduleSessionAutosave(options = {}) {
+      getSessionController().scheduleSessionAutosave(options);
+    }
+
+    async function attemptSessionRestore() {
+      return getSessionController().attemptSessionRestore();
+    }
+
+    function normalizeExportPreset(value) {
+      if (value === 'web' || value === 'whatsapp' || value === 'instagram' || value === 'print') {
+        return value;
+      }
+      return 'custom';
+    }
+
+    function normalizeOcrLanguage(value) {
+      return value === 'eng+hin' ? 'eng+hin' : 'eng';
+    }
+
+    function normalizeTextStrictness(value) {
+      if (value === 'strict' || value === 'loose') return value;
+      return 'balanced';
+    }
+
+    function isTypingTarget(target) {
+      if (!target) return false;
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      return !!target.closest('[contenteditable="true"]');
+    }
+
+    function persistExportPreferences() {
+      if (!dom.formatInput || !dom.qualityInput || !dom.stripMetaInput || !dom.exportPresetInput) return;
+      localStorage.setItem('liteedit_export_format', dom.formatInput.value);
+      localStorage.setItem('liteedit_export_quality', String(dom.qualityInput.value));
+      localStorage.setItem('liteedit_export_strip_meta', dom.stripMetaInput.checked ? 'true' : 'false');
+      localStorage.setItem('liteedit_export_preset', normalizeExportPreset(dom.exportPresetInput.value));
+    }
+
+    function markExportPresetCustom() {
+      if (!dom.exportPresetInput) return;
+      dom.exportPresetInput.value = 'custom';
+      state.exportPreset = 'custom';
+      persistExportPreferences();
+    }
+
+    function applyExportPreset(preset, { silent = false, persist = true } = {}) {
+      if (!dom.exportPresetInput || !dom.formatInput || !dom.qualityInput || !dom.stripMetaInput) return;
+      const normalized = normalizeExportPreset(preset);
+      state.exportPreset = normalized;
+      dom.exportPresetInput.value = normalized;
+
+      if (normalized === 'web') {
+        dom.formatInput.value = 'image/webp';
+        dom.qualityInput.value = '82';
+        dom.stripMetaInput.checked = true;
+      } else if (normalized === 'whatsapp') {
+        dom.formatInput.value = 'image/jpeg';
+        dom.qualityInput.value = '78';
+        dom.stripMetaInput.checked = true;
+      } else if (normalized === 'instagram') {
+        dom.formatInput.value = 'image/jpeg';
+        dom.qualityInput.value = '88';
+        dom.stripMetaInput.checked = true;
+      } else if (normalized === 'print') {
+        dom.formatInput.value = 'image/png';
+        dom.qualityInput.value = '100';
+        dom.stripMetaInput.checked = false;
+      }
+
+      updateBulkPdfModeVisibility();
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
+      updateExportSizeEstimate();
+      if (persist) {
+        persistExportPreferences();
+      }
+      if (!silent && normalized !== 'custom') {
+        showToast(`Export preset applied: ${normalized}`, 'success');
+      }
+    }
+
+    function getModalController() {
+      if (!modalController) {
+        modalController = createModalController({
+          state,
+          dom,
+          stopLiveCaptureStream
+        });
+      }
+      return modalController;
     }
 
     function getFocusableIn(el) {
-      if (!el) return [];
-      return Array.from(el.querySelectorAll(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      ));
+      return getModalController().getFocusableIn(el);
     }
 
     function openModal(el, origin = document.activeElement) {
-      if (!el) return;
-      if (state.activeModal && state.activeModal !== el) {
-        closeModal(state.activeModal);
-      }
-      state.modalFocusOrigin = origin || null;
-      state.activeModal = el;
-      el.classList.add('active');
-      el.setAttribute('aria-hidden', 'false');
-      document.body.style.overflow = 'hidden';
-      const focusable = getFocusableIn(el);
-      if (focusable.length) {
-        window.setTimeout(() => focusable[0].focus(), 0);
-      }
+      getModalController().openModal(el, origin);
     }
 
     function closeModal(el) {
-      if (!el) return;
-      if (el === dom.liveCaptureModal) {
-        stopLiveCaptureStream();
-      }
-      el.classList.remove('active');
-      el.setAttribute('aria-hidden', 'true');
-      if (state.activeModal === el) {
-        state.activeModal = null;
-      }
-      if (!dom.importSheet.classList.contains('active')
-        && !dom.exportSheet.classList.contains('active')
-        && !dom.settingsSheet.classList.contains('active')
-        && !dom.helpSheet.classList.contains('active')
-        && !dom.cameraSheet.classList.contains('active')
-        && !dom.liveCaptureModal.classList.contains('active')) {
-        document.body.style.overflow = '';
-      }
-      if (state.modalFocusOrigin && typeof state.modalFocusOrigin.focus === 'function') {
-        state.modalFocusOrigin.focus();
-      }
-      state.modalFocusOrigin = null;
+      getModalController().closeModal(el);
     }
 
     function normalizeBulkExportMode(value) {
@@ -433,11 +710,26 @@
       if (dom.bulkSequentialBaseInput) {
         dom.bulkSequentialBaseInput.value = state.bulkSequentialBase;
       }
+      if (dom.bulkUseTemplateInput) {
+        dom.bulkUseTemplateInput.checked = !!state.bulkUseNameTemplate;
+      }
+      if (dom.bulkNameTemplateInput) {
+        dom.bulkNameTemplateInput.value = state.bulkNameTemplate || '{name}_{n}';
+      }
+      if (dom.bulkNameSuffixInput) {
+        dom.bulkNameSuffixInput.value = state.bulkNameSuffix || '';
+      }
       const showSequential = state.exportMode === 'bulk'
         && state.bulkExportMode === 'zip'
         && state.bulkAdvancedMode === 'sequential';
       if (dom.bulkSequentialGroup) {
         dom.bulkSequentialGroup.classList.toggle('active', showSequential);
+      }
+      if (dom.bulkTemplateGroup) {
+        dom.bulkTemplateGroup.classList.toggle('active', !!state.bulkUseNameTemplate);
+      }
+      if (dom.bulkSuffixGroup) {
+        dom.bulkSuffixGroup.classList.toggle('active', !!state.bulkUseNameTemplate);
       }
       const showBulkPanel = state.exportMode === 'bulk' && state.bulkShowImages === 'show';
       if (dom.bulkFilesPanel) {
@@ -517,6 +809,11 @@
         const originalType = extensionForType(sourceMimeType).toUpperCase();
         details.textContent = `Original: ${originalType} | ${formatBytes(getOriginalBytesForImage(img))}`;
         meta.appendChild(details);
+
+        const progress = document.createElement('div');
+        progress.className = 'bulk-file-progress';
+        progress.textContent = img.exportStatus || 'Queued';
+        meta.appendChild(progress);
 
         const config = document.createElement('div');
         config.className = 'bulk-file-config';
@@ -609,6 +906,27 @@
       }
     }
 
+    function setBulkRowStatus(img, status) {
+      if (!img) return;
+      img.exportStatus = status;
+      if (!dom.bulkFilesPanel) return;
+      const row = dom.bulkFilesPanel.querySelector(`[data-image-id="${img.id}"]`);
+      if (!row) return;
+      const label = row.querySelector('.bulk-file-progress');
+      if (label) {
+        label.textContent = status;
+      }
+    }
+
+    function resetBulkStatuses() {
+      state.images.forEach((img) => {
+        img.exportStatus = 'Queued';
+      });
+      if (shouldRenderBulkPanelNow()) {
+        renderBulkFilesPanel();
+      }
+    }
+
     function hasPendingExports() {
       return state.images.some((img) => img.dirty && (img.revision || 0) > (img.lastExportRevision || 0));
     }
@@ -619,15 +937,25 @@
       const hasAny = state.images.length > 0;
       const detections = getTextDetectionsForImage(img);
       const hasTextSelection = state.textSelectionIndex >= 0 && state.textSelectionIndex < detections.length;
+      const adjustmentStack = hasImage ? getAdjustmentStackForImage(img) : [];
+      const hasAdjustmentStep = adjustmentStack.length > 0;
+      const hasAdjustmentSelection = hasAdjustmentStep
+        && state.adjustmentStepSelectionIndex >= 0
+        && state.adjustmentStepSelectionIndex < adjustmentStack.length;
       [
         dom.downloadBtn,
         dom.applyResizeBtn,
+        dom.applyResizeAllBtn,
         dom.rotateLeftBtn,
         dom.rotateRightBtn,
         dom.flipXBtn,
         dom.flipYBtn,
         dom.resetImageBtn,
         dom.applyAdjustBtn,
+        dom.applyAdjustAllBtn,
+        dom.updateAdjustStepBtn,
+        dom.removeAdjustStepBtn,
+        dom.clearAdjustStackBtn,
         dom.resetAdjustBtn,
         dom.quickAutoBtn,
         dom.quickResetBtn,
@@ -650,20 +978,47 @@
       if (dom.openExportBtn) dom.openExportBtn.disabled = !hasAny;
       if (dom.mobileExportBtn) dom.mobileExportBtn.disabled = !hasAny;
       if (dom.openExportFromSettingsBtn) dom.openExportFromSettingsBtn.disabled = !hasAny;
+      if (dom.compareHoldBtn) {
+        dom.compareHoldBtn.disabled = !hasImage;
+        dom.compareHoldBtn.classList.toggle('active', hasImage && state.comparePreviewActive);
+        dom.compareHoldBtn.setAttribute('aria-pressed', hasImage && state.comparePreviewActive ? 'true' : 'false');
+      }
+      if (dom.toggleSplitCompareBtn) {
+        dom.toggleSplitCompareBtn.disabled = !hasImage;
+      }
+      if (dom.compareSplitSlider) {
+        dom.compareSplitSlider.disabled = !hasImage || !state.splitCompareActive;
+      }
       if (dom.bulkExportModeInput) dom.bulkExportModeInput.disabled = !hasAny;
       if (dom.bulkAdvancedInput) dom.bulkAdvancedInput.disabled = !hasAny;
       if (dom.bulkShowImagesInput) dom.bulkShowImagesInput.disabled = !hasAny;
       if (dom.bulkSequentialBaseInput) dom.bulkSequentialBaseInput.disabled = !hasAny || state.bulkExportMode !== 'zip';
+      if (dom.bulkUseTemplateInput) dom.bulkUseTemplateInput.disabled = !hasAny;
+      if (dom.bulkNameTemplateInput) dom.bulkNameTemplateInput.disabled = !hasAny || !state.bulkUseNameTemplate;
+      if (dom.bulkNameSuffixInput) dom.bulkNameSuffixInput.disabled = !hasAny || !state.bulkUseNameTemplate;
+      if (dom.exportPresetInput) dom.exportPresetInput.disabled = !hasAny;
+      if (dom.cancelExportQueueBtn) {
+        dom.cancelExportQueueBtn.disabled = !(exportQueue && exportQueue.active);
+      }
       if (dom.detectTextBtn) dom.detectTextBtn.disabled = !hasImage || state.detectingText;
+      if (dom.ocrLanguageInput) dom.ocrLanguageInput.disabled = !hasImage || state.detectingText;
+      if (dom.textConfidenceInput) dom.textConfidenceInput.disabled = !hasImage || state.detectingText;
+      if (dom.textStrictnessInput) dom.textStrictnessInput.disabled = !hasImage;
       if (dom.clearTextBoxesBtn) dom.clearTextBoxesBtn.disabled = !hasImage || detections.length === 0;
       if (dom.detectedTextSelect) dom.detectedTextSelect.disabled = !hasImage || detections.length === 0;
       if (dom.replaceTextInput) dom.replaceTextInput.disabled = !hasImage || !hasTextSelection;
       if (dom.textFontFamilySelect) dom.textFontFamilySelect.disabled = !hasImage || !hasTextSelection;
       if (dom.smartTextAutoSizeInput) dom.smartTextAutoSizeInput.disabled = !hasImage || !hasTextSelection;
       if (dom.applyTextReplaceBtn) dom.applyTextReplaceBtn.disabled = !hasImage || !hasTextSelection;
+      if (dom.updateAdjustStepBtn) dom.updateAdjustStepBtn.disabled = !hasAdjustmentSelection;
+      if (dom.removeAdjustStepBtn) dom.removeAdjustStepBtn.disabled = !hasAdjustmentSelection;
+      if (dom.clearAdjustStackBtn) dom.clearAdjustStackBtn.disabled = !hasAdjustmentStep;
       dom.toolButtons.forEach((btn) => {
         btn.disabled = !hasImage;
       });
+      if (dom.adjustmentStackList) {
+        dom.adjustmentStackList.classList.toggle('disabled', !hasImage);
+      }
     }
 
     function applyTheme(mode) {
@@ -754,6 +1109,24 @@
       return canvasToolsPromise;
     }
 
+    function ensureSessionStoreLoaded() {
+      if (sessionStoreModule) return sessionStorePromise || Promise.resolve(sessionStoreModule);
+      if (sessionStorePromise) return sessionStorePromise;
+
+      sessionStorePromise = import('./session-store.js')
+        .then((module) => {
+          sessionStoreModule = module;
+          return module;
+        })
+        .catch((error) => {
+          sessionStorePromise = null;
+          sessionStoreModule = null;
+          throw error;
+        });
+
+      return sessionStorePromise;
+    }
+
     function ensureAdvancedResourcesLoaded() {
       if (state.advancedResourcesLoaded) return state.advancedResourcesPromise || Promise.resolve();
       if (state.advancedResourcesPromise) return state.advancedResourcesPromise;
@@ -826,25 +1199,48 @@
     function applyUserMode(mode) {
       const nextMode = mode === 'advanced' ? 'advanced' : 'simple';
       state.userMode = nextMode;
+      if (nextMode === 'simple' && state.textAddPlacementActive) {
+        setTextAddPlacementActive(false);
+      }
       dom.appRoot.classList.toggle('basic-mode', nextMode === 'simple');
       dom.simpleModeBtn.classList.toggle('active', nextMode === 'simple');
       dom.advancedModeBtn.classList.toggle('active', nextMode === 'advanced');
       dom.simpleModeBtn.setAttribute('aria-selected', nextMode === 'simple' ? 'true' : 'false');
       dom.advancedModeBtn.setAttribute('aria-selected', nextMode === 'advanced' ? 'true' : 'false');
 
+      const adjustmentsSection = document.getElementById('adjustmentsSection');
+      const geometrySection = document.getElementById('geometrySection');
+      const textSection = document.getElementById('textSection');
+      const quickSection = document.getElementById('quickEditSection');
+      const outputSection = document.getElementById('outputSection');
+
       if (nextMode === 'simple') {
+        if (state.tool === 'hand') {
+          setTool(state.lastNonHandTool || 'pen');
+        }
         applyToolsVisibility(false);
+        if (adjustmentsSection) setControlSectionCollapsed(adjustmentsSection, true, { persist: false });
+        if (geometrySection) setControlSectionCollapsed(geometrySection, true, { persist: false });
+        if (textSection) setControlSectionCollapsed(textSection, true, { persist: false });
+        if (quickSection) setControlSectionCollapsed(quickSection, false, { persist: false });
+        if (outputSection) setControlSectionCollapsed(outputSection, false, { persist: false });
+        document.querySelectorAll('.advanced-options-drawer').forEach((drawer) => {
+          drawer.open = false;
+        });
       } else if (!isMobileView()) {
         void ensureAdvancedResourcesLoaded();
         // Desktop advanced mode should always expose full editing controls.
         applyToolsVisibility(true);
         applyControlsVisibility(true);
+        if (adjustmentsSection) setControlSectionCollapsed(adjustmentsSection, false, { persist: false });
+        if (geometrySection) setControlSectionCollapsed(geometrySection, false, { persist: false });
       } else {
         void ensureAdvancedResourcesLoaded();
       }
 
       localStorage.setItem('liteedit_user_mode', nextMode);
       updateActionAvailability();
+      syncTextEditPanel({ preserveNoSelection: true });
       syncTextQuickEditor();
     }
 
@@ -893,6 +1289,7 @@
       view.offsetY = 0;
       view.pinchActive = false;
       applyCanvasViewport();
+      updateCanvasCursor();
     }
 
     function setCanvasZoom(nextZoom, anchorClientX = null, anchorClientY = null) {
@@ -917,6 +1314,122 @@
       view.zoom = zoom;
       clampViewportOffset();
       applyCanvasViewport();
+      updateCanvasCursor();
+    }
+
+    function canPanCanvas() {
+      return !!activeImage() && state.viewport.zoom > 1.01;
+    }
+
+    function updateCanvasCursor() {
+      if (!dom.canvas) return;
+      if (state.canvasPan && state.canvasPan.active) {
+        dom.canvas.style.cursor = 'grabbing';
+        return;
+      }
+      if (state.textAddPlacementActive && state.userMode === 'advanced') {
+        dom.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      if (state.tool === 'crop') {
+        dom.canvas.style.cursor = 'crosshair';
+        return;
+      }
+      if ((state.tool === 'hand' || state.keyboardPanActive) && canPanCanvas()) {
+        dom.canvas.style.cursor = 'grab';
+        return;
+      }
+      dom.canvas.style.cursor = 'default';
+    }
+
+    function beginCanvasPan(pointerEvent) {
+      if (!canPanCanvas()) return false;
+      state.canvasPan = {
+        active: true,
+        pointerId: pointerEvent.pointerId,
+        startClientX: pointerEvent.clientX,
+        startClientY: pointerEvent.clientY,
+        startOffsetX: state.viewport.offsetX,
+        startOffsetY: state.viewport.offsetY
+      };
+      updateCanvasCursor();
+      return true;
+    }
+
+    function updateCanvasPan(pointerEvent) {
+      const pan = state.canvasPan;
+      if (!pan || !pan.active) return;
+      const dx = pointerEvent.clientX - pan.startClientX;
+      const dy = pointerEvent.clientY - pan.startClientY;
+      state.viewport.offsetX = pan.startOffsetX + dx;
+      state.viewport.offsetY = pan.startOffsetY + dy;
+      clampViewportOffset();
+      applyCanvasViewport();
+    }
+
+    function endCanvasPan() {
+      if (!state.canvasPan) return;
+      state.canvasPan.active = false;
+      state.canvasPan = null;
+      updateCanvasCursor();
+    }
+
+    function shouldUsePanGesture(pointerEvent) {
+      if (!pointerEvent || pointerEvent.button !== 0) return false;
+      if (!activeImage()) return false;
+      if (state.tool === 'hand') return canPanCanvas();
+      if (state.keyboardPanActive) return canPanCanvas();
+      return false;
+    }
+
+    function setComparePreviewActive(active) {
+      if (!activeImage()) return;
+      const next = !!active;
+      if (state.comparePreviewActive === next) return;
+      state.comparePreviewActive = next;
+      if (dom.compareHoldBtn) {
+        dom.compareHoldBtn.classList.toggle('active', next);
+        dom.compareHoldBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+      }
+      renderCanvas();
+    }
+
+    function setSplitCompareActive(active) {
+      const next = !!active;
+      state.splitCompareActive = next;
+      localStorage.setItem('liteedit_split_compare_active', next ? 'true' : 'false');
+      if (dom.toggleSplitCompareBtn) {
+        dom.toggleSplitCompareBtn.classList.toggle('active', next);
+        dom.toggleSplitCompareBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+      }
+      if (dom.compareTools) {
+        dom.compareTools.classList.toggle('split-active', next);
+      }
+      if (dom.compareSplitSlider) {
+        dom.compareSplitSlider.disabled = !activeImage() || !next;
+      }
+      renderCanvas();
+      updateActionAvailability();
+      if (state.images.length > 0) {
+        scheduleSessionAutosave();
+      }
+    }
+
+    function setSplitComparePosition(value) {
+      const next = clamp(parseInt(value, 10) || 50, 10, 90);
+      state.splitComparePosition = next;
+      localStorage.setItem('liteedit_split_compare_position', String(next));
+      if (dom.compareSplitSlider) {
+        dom.compareSplitSlider.value = String(next);
+      }
+      if (state.splitCompareActive && !state.comparePreviewActive) {
+        renderCanvas();
+      } else {
+        updateLiveImageInfo();
+      }
+      if (state.images.length > 0) {
+        scheduleSessionAutosave();
+      }
     }
 
     function stepCanvasZoom(direction) {
@@ -985,6 +1498,243 @@
       return state.images[state.selectedIndex] || null;
     }
 
+    function getImageBaseName(name) {
+      const dot = String(name || '').lastIndexOf('.');
+      return dot > 0 ? name.slice(0, dot) : String(name || '');
+    }
+
+    function ensureImageAdjustmentModel(img) {
+      if (!img) return;
+      if (!Array.isArray(img.adjustmentStack)) {
+        img.adjustmentStack = [];
+      }
+      if (!img.adjustmentBaseCanvas) {
+        img.adjustmentBaseCanvas = null;
+      }
+    }
+
+    function normalizeAdjustmentStep(step) {
+      return {
+        brightness: clamp(parseInt(step && step.brightness, 10) || 100, 40, 180),
+        contrast: clamp(parseInt(step && step.contrast, 10) || 100, 40, 200),
+        saturation: clamp(parseInt(step && step.saturation, 10) || 100, 0, 220),
+        globalBlur: clamp(parseInt(step && step.globalBlur, 10) || 0, 0, 12)
+      };
+    }
+
+    function isNeutralAdjustmentStep(step) {
+      const normalized = normalizeAdjustmentStep(step);
+      return normalized.brightness === 100
+        && normalized.contrast === 100
+        && normalized.saturation === 100
+        && normalized.globalBlur === 0;
+    }
+
+    function cloneAdjustmentStep(step) {
+      const normalized = normalizeAdjustmentStep(step);
+      return {
+        brightness: normalized.brightness,
+        contrast: normalized.contrast,
+        saturation: normalized.saturation,
+        globalBlur: normalized.globalBlur
+      };
+    }
+
+    function getAdjustmentStackForImage(img = activeImage()) {
+      if (!img) return [];
+      ensureImageAdjustmentModel(img);
+      return img.adjustmentStack;
+    }
+
+    function renderAdjustmentStackList() {
+      if (!dom.adjustmentStackList) return;
+      const img = activeImage();
+      if (!img) {
+        dom.adjustmentStackList.innerHTML = '<div class="adjustment-stack-empty">Select an image to manage steps.</div>';
+        return;
+      }
+      const stack = getAdjustmentStackForImage(img);
+      if (stack.length === 0) {
+        dom.adjustmentStackList.innerHTML = '<div class="adjustment-stack-empty">No adjustment steps yet.</div>';
+        return;
+      }
+      const selectedIndex = clamp(state.adjustmentStepSelectionIndex, -1, stack.length - 1);
+      if (selectedIndex !== state.adjustmentStepSelectionIndex) {
+        state.adjustmentStepSelectionIndex = selectedIndex;
+      }
+      dom.adjustmentStackList.innerHTML = '';
+      stack.forEach((rawStep, index) => {
+        const step = normalizeAdjustmentStep(rawStep);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `adjustment-stack-item${index === state.adjustmentStepSelectionIndex ? ' active' : ''}`;
+        item.innerHTML = `
+          <div class="adjustment-stack-item-title">Step ${index + 1}</div>
+          <div class="adjustment-stack-item-meta">
+            <span>B ${step.brightness}%</span>
+            <span>C ${step.contrast}%</span>
+            <span>S ${step.saturation}%</span>
+            <span>Blur ${step.globalBlur}px</span>
+          </div>
+        `;
+        item.addEventListener('click', () => {
+          state.adjustmentStepSelectionIndex = index;
+          dom.brightnessInput.value = String(step.brightness);
+          dom.contrastInput.value = String(step.contrast);
+          dom.saturationInput.value = String(step.saturation);
+          dom.globalBlurInput.value = String(step.globalBlur);
+          renderAdjustmentStackList();
+          setStatus(`Adjustment step ${index + 1} selected`);
+          updateActionAvailability();
+        });
+        dom.adjustmentStackList.appendChild(item);
+      });
+    }
+
+    function clearAdjustmentModel(img, { keepCanvas = true } = {}) {
+      if (!img) return;
+      ensureImageAdjustmentModel(img);
+      if (!keepCanvas && img.adjustmentBaseCanvas) {
+        img.canvas = cloneCanvas(img.adjustmentBaseCanvas);
+      }
+      img.adjustmentStack = [];
+      img.adjustmentBaseCanvas = null;
+      if (img === activeImage()) {
+        state.adjustmentStepSelectionIndex = -1;
+        renderAdjustmentStackList();
+      }
+    }
+
+    function rebuildCanvasFromAdjustmentStack(img) {
+      if (!img) return false;
+      ensureImageAdjustmentModel(img);
+      if (!img.adjustmentBaseCanvas || img.adjustmentStack.length === 0) return false;
+      let working = cloneCanvas(img.adjustmentBaseCanvas);
+      img.adjustmentStack.forEach((rawStep) => {
+        working = buildAdjustedCanvas(working, normalizeAdjustmentStep(rawStep));
+      });
+      img.canvas = working;
+      markImageModified(img);
+      return true;
+    }
+
+    function appendAdjustmentStepToImage(img, step, { silent = false } = {}) {
+      if (!img) return false;
+      const normalized = normalizeAdjustmentStep(step);
+      if (isNeutralAdjustmentStep(normalized)) {
+        if (!silent) {
+          showToast('Adjustment step skipped (no visual change).', 'info');
+        }
+        return false;
+      }
+      ensureImageAdjustmentModel(img);
+      if (!img.adjustmentBaseCanvas) {
+        img.adjustmentBaseCanvas = cloneCanvas(img.canvas);
+      }
+      pushHistory(img);
+      img.adjustmentStack.push(cloneAdjustmentStep(normalized));
+      state.adjustmentStepSelectionIndex = img.adjustmentStack.length - 1;
+      rebuildCanvasFromAdjustmentStack(img);
+      clearTextDetectionsForImage(img, { silent: true });
+      if (img === activeImage()) {
+        renderCanvas();
+        renderAdjustmentStackList();
+      }
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      updateExportSizeEstimate();
+      if (!silent) {
+        setStatus(`Adjustment step ${img.adjustmentStack.length} added`);
+      }
+      return true;
+    }
+
+    function updateSelectedAdjustmentStep() {
+      const img = activeImage();
+      if (!img) return;
+      ensureImageAdjustmentModel(img);
+      if (img.adjustmentStack.length === 0 || state.adjustmentStepSelectionIndex < 0 || state.adjustmentStepSelectionIndex >= img.adjustmentStack.length) {
+        showToast('Select an adjustment step first.', 'info');
+        return;
+      }
+      const replacement = getAdjustmentValues();
+      pushHistory(img);
+      img.adjustmentStack[state.adjustmentStepSelectionIndex] = cloneAdjustmentStep(replacement);
+      rebuildCanvasFromAdjustmentStack(img);
+      clearTextDetectionsForImage(img, { silent: true });
+      renderCanvas();
+      renderAdjustmentStackList();
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      updateExportSizeEstimate();
+      setStatus(`Adjustment step ${state.adjustmentStepSelectionIndex + 1} updated`);
+    }
+
+    function removeSelectedAdjustmentStep() {
+      const img = activeImage();
+      if (!img) return;
+      ensureImageAdjustmentModel(img);
+      if (img.adjustmentStack.length === 0 || state.adjustmentStepSelectionIndex < 0 || state.adjustmentStepSelectionIndex >= img.adjustmentStack.length) {
+        showToast('Select an adjustment step first.', 'info');
+        return;
+      }
+      pushHistory(img);
+      img.adjustmentStack.splice(state.adjustmentStepSelectionIndex, 1);
+      if (img.adjustmentStack.length === 0) {
+        clearAdjustmentModel(img, { keepCanvas: false });
+        markImageModified(img);
+        refreshDirtyState(img);
+      } else {
+        state.adjustmentStepSelectionIndex = Math.max(0, Math.min(state.adjustmentStepSelectionIndex, img.adjustmentStack.length - 1));
+        rebuildCanvasFromAdjustmentStack(img);
+      }
+      clearTextDetectionsForImage(img, { silent: true });
+      renderCanvas();
+      renderAdjustmentStackList();
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      updateExportSizeEstimate();
+      setStatus('Adjustment step removed');
+    }
+
+    function clearAdjustmentStepsForActiveImage() {
+      const img = activeImage();
+      if (!img) return;
+      ensureImageAdjustmentModel(img);
+      if (img.adjustmentStack.length === 0) {
+        showToast('No adjustment steps to clear.', 'info');
+        return;
+      }
+      pushHistory(img);
+      clearAdjustmentModel(img, { keepCanvas: false });
+      markImageModified(img);
+      refreshDirtyState(img);
+      clearTextDetectionsForImage(img, { silent: true });
+      renderCanvas();
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      updateExportSizeEstimate();
+      setStatus('Adjustment steps cleared');
+    }
+
+    function invalidateAdjustmentStackForImage(img) {
+      if (!img) return;
+      ensureImageAdjustmentModel(img);
+      if (img.adjustmentStack.length === 0 && !img.adjustmentBaseCanvas) return;
+      img.adjustmentStack = [];
+      img.adjustmentBaseCanvas = null;
+      if (img === activeImage()) {
+        state.adjustmentStepSelectionIndex = -1;
+        renderAdjustmentStackList();
+      }
+    }
+
+    function prepareForDirectCanvasEdit(img) {
+      if (!img) return;
+      clearAdjustmentPreview();
+      invalidateAdjustmentStackForImage(img);
+    }
+
     function isTextDetectorSupported() {
       return typeof window.TextDetector === 'function' || !!(window.Tesseract && typeof window.Tesseract.recognize === 'function');
     }
@@ -1003,6 +1753,47 @@
         return null;
       }
       return detections[state.textSelectionIndex];
+    }
+
+    function getTextController() {
+      if (!textController) {
+        textController = createTextController({
+          state,
+          dom,
+          clamp,
+          activeImage,
+          getSelectedTextDetection,
+          syncTextQuickEditor,
+          renderCanvas,
+          scheduleSessionAutosave,
+          setStatus,
+          showToast,
+          updateCanvasCursor,
+          prepareForDirectCanvasEdit,
+          pushHistory,
+          markImageModified,
+          updateUndoRedoState,
+          updateExportSizeEstimate,
+          requestThumbnailsRender
+        });
+      }
+      return textController;
+    }
+
+    function syncSelectedTextBoxPositionFields() {
+      getTextController().syncSelectedTextBoxPositionFields();
+    }
+
+    function applySelectedTextBoxPosition({ center = false } = {}) {
+      getTextController().applySelectedTextBoxPosition({ center });
+    }
+
+    function setTextAddPlacementActive(active) {
+      getTextController().setTextAddPlacementActive(active);
+    }
+
+    function placeNewTextBoxAtPoint(point) {
+      return getTextController().placeNewTextBoxAtPoint(point);
     }
 
     function focusReplacementInput(preferQuick = false) {
@@ -1045,8 +1836,11 @@
       }
     }
 
-    function clearTextDetectionsForImage(img = activeImage(), { silent = false } = {}) {
+    function clearTextDetectionsForImage(img = activeImage(), { silent = false, recordHistory = false, actionLabel = 'Clear text boxes' } = {}) {
       if (!img) return;
+      if (recordHistory && Array.isArray(img.textDetections) && img.textDetections.length > 0) {
+        pushHistory(img, actionLabel);
+      }
       img.textDetections = [];
       if (img === activeImage()) {
         state.textSelectionIndex = -1;
@@ -1054,6 +1848,9 @@
         if (dom.replaceTextInput) dom.replaceTextInput.value = '';
         syncTextEditPanel();
         renderCanvas();
+      }
+      if (recordHistory) {
+        updateUndoRedoState();
       }
       if (!silent) {
         setStatus('Detected text tokens cleared');
@@ -1064,6 +1861,7 @@
       const detections = getTextDetectionsForImage();
       if (detections.length === 0) {
         state.textSelectionIndex = -1;
+        syncSelectedTextBoxPositionFields();
         syncTextEditPanel();
         renderCanvas();
         return false;
@@ -1078,6 +1876,7 @@
       if (syncInput && dom.replaceTextInput) {
         dom.replaceTextInput.value = selected.text || '';
       }
+      syncSelectedTextBoxPositionFields();
       syncTextEditPanel();
       renderCanvas();
       if (syncInput) {
@@ -1131,7 +1930,8 @@
       state.textDrag = {
         index,
         offsetX: point.x - box.x,
-        offsetY: point.y - box.y
+        offsetY: point.y - box.y,
+        hasHistoryEntry: false
       };
       dom.canvas.style.cursor = 'move';
       return true;
@@ -1142,18 +1942,34 @@
       const detections = getTextDetectionsForImage();
       const box = detections[state.textDrag.index];
       if (!box) return false;
+      if (!state.textDrag.hasHistoryEntry) {
+        const img = activeImage();
+        if (img) {
+          pushHistory(img, 'Move text box');
+          state.textDrag.hasHistoryEntry = true;
+        }
+      }
       const nextX = clamp(point.x - state.textDrag.offsetX, 0, Math.max(0, dom.canvas.width - box.w));
       const nextY = clamp(point.y - state.textDrag.offsetY, 0, Math.max(0, dom.canvas.height - box.h));
       box.x = Math.round(nextX);
       box.y = Math.round(nextY);
+      syncSelectedTextBoxPositionFields();
+      syncTextQuickEditor();
       renderCanvas();
       return true;
     }
 
     function endTextBlockDrag() {
       if (!state.textDrag) return;
+      const committed = !!state.textDrag.hasHistoryEntry;
       state.textDrag = null;
       dom.canvas.style.cursor = 'default';
+      syncSelectedTextBoxPositionFields();
+      if (committed) {
+        updateUndoRedoState();
+        setStatus('Text box moved');
+      }
+      scheduleSessionAutosave();
       syncTextQuickEditor();
     }
 
@@ -1235,7 +2051,7 @@
 
       if (dom.detectTextSupportNote) {
         dom.detectTextSupportNote.textContent = supported
-          ? 'Detect text, then edit using the white word indicators on canvas or from the token list.'
+          ? 'Detect text, then drag white boxes to reposition or edit from the token list.'
           : 'Native text detection is unavailable. OCR fallback will load when you tap Detect Text.';
       }
 
@@ -1250,8 +2066,11 @@
             const option = document.createElement('option');
             const preview = (detection.text || '').replace(/\s+/g, ' ').trim();
             const snippet = preview ? preview.slice(0, 28) : `Token ${idx + 1}`;
+            const confidenceTag = Number.isFinite(detection.confidence)
+              ? ` (${Math.round(detection.confidence)}%)`
+              : '';
             option.value = String(idx);
-            option.textContent = `${idx + 1}. ${snippet}${preview.length > 28 ? '...' : ''}`;
+            option.textContent = `${idx + 1}. ${snippet}${preview.length > 28 ? '...' : ''}${confidenceTag}`;
             dom.detectedTextSelect.appendChild(option);
           });
           if (state.textSelectionIndex >= 0) {
@@ -1264,6 +2083,21 @@
       if (dom.detectTextBtn) {
         dom.detectTextBtn.disabled = !hasImage || state.detectingText;
         dom.detectTextBtn.textContent = state.detectingText ? 'Detecting...' : 'Detect Text';
+      }
+      if (dom.textConfidenceInput) {
+        dom.textConfidenceInput.value = String(clamp(state.textConfidenceThreshold, 0, 95));
+      }
+      if (dom.textConfidenceVal) {
+        dom.textConfidenceVal.textContent = String(clamp(state.textConfidenceThreshold, 0, 95));
+      }
+      if (dom.textStrictnessInput) {
+        dom.textStrictnessInput.value = normalizeTextStrictness(state.textStrictness);
+      }
+      if (dom.textSizeScaleInput) {
+        dom.textSizeScaleInput.value = String(state.textReplaceSizeScale);
+      }
+      if (dom.textSizeScaleVal) {
+        dom.textSizeScaleVal.textContent = String(state.textReplaceSizeScale);
       }
       if (dom.clearTextBoxesBtn) dom.clearTextBoxesBtn.disabled = !hasImage || detections.length === 0;
       if (dom.detectedTextSelect) dom.detectedTextSelect.disabled = !hasImage || detections.length === 0;
@@ -1284,7 +2118,38 @@
       }
       if (dom.smartTextAutoSizeInput) dom.smartTextAutoSizeInput.disabled = !hasImage || !hasSelection;
       if (dom.applyTextReplaceBtn) dom.applyTextReplaceBtn.disabled = !hasImage || !hasSelection;
+      if (dom.startAddTextBtn) {
+        dom.startAddTextBtn.disabled = !hasImage || state.userMode !== 'advanced';
+      }
+      if (dom.cancelAddTextBtn) {
+        dom.cancelAddTextBtn.disabled = !state.textAddPlacementActive;
+      }
+      if (dom.addTextBgOpacityInput && dom.addTextBgOpacityVal) {
+        const opacityVal = clamp(parseInt(dom.addTextBgOpacityInput.value || '78', 10) || 78, 15, 100);
+        dom.addTextBgOpacityVal.textContent = String(opacityVal);
+      }
+      syncSelectedTextBoxPositionFields();
       syncTextQuickEditor();
+    }
+
+    function applyConfidenceThresholdToCurrentDetections() {
+      const img = activeImage();
+      if (!img) return;
+      const detections = getTextDetectionsForImage(img);
+      if (detections.length === 0) return;
+      const threshold = clamp(parseInt(state.textConfidenceThreshold, 10) || 0, 0, 95);
+      const filtered = detections.filter((entry) => {
+        if (!Number.isFinite(entry && entry.confidence)) return true;
+        return entry.confidence >= threshold;
+      });
+      if (filtered.length === detections.length) return;
+      img.textDetections = filtered;
+      if (state.textSelectionIndex >= filtered.length) {
+        state.textSelectionIndex = filtered.length > 0 ? filtered.length - 1 : -1;
+      }
+      syncTextEditPanel();
+      renderCanvas();
+      setStatus(`Filtered text tokens by confidence: ${threshold}%+`);
     }
 
     async function detectTextBlocks() {
@@ -1299,31 +2164,39 @@
 
       try {
         const textTools = await ensureTextToolsLoaded();
-        const detections = await textTools.detectTextBlocks(img.canvas, { granularity: 'word' });
+        const detections = await textTools.detectTextBlocks(img.canvas, {
+          granularity: 'word',
+          language: state.ocrLanguage
+        });
+        const threshold = clamp(parseInt(state.textConfidenceThreshold, 10) || 0, 0, 95);
+        const filteredDetections = detections.filter((entry) => {
+          if (!Number.isFinite(entry && entry.confidence)) return true;
+          return entry.confidence >= threshold;
+        });
         if (typeof textTools.estimateTextStyle === 'function') {
-          detections.forEach((detection) => {
+          filteredDetections.forEach((detection) => {
             detection.style = textTools.estimateTextStyle(img.canvas, detection, detection.text);
           });
         }
 
-        img.textDetections = detections;
-        state.textSelectionIndex = detections.length > 0 ? 0 : -1;
-        if (detections.length > 0 && dom.replaceTextInput) {
-          dom.replaceTextInput.value = detections[0].text || '';
+        img.textDetections = filteredDetections;
+        state.textSelectionIndex = filteredDetections.length > 0 ? 0 : -1;
+        if (filteredDetections.length > 0 && dom.replaceTextInput) {
+          dom.replaceTextInput.value = filteredDetections[0].text || '';
         } else if (dom.replaceTextInput) {
           dom.replaceTextInput.value = '';
         }
 
-        setStatus(detections.length > 0
-          ? `Detected ${detections.length} text token${detections.length > 1 ? 's' : ''}`
+        setStatus(filteredDetections.length > 0
+          ? `Detected ${filteredDetections.length} text token${filteredDetections.length > 1 ? 's' : ''}`
           : 'No readable text tokens found');
         showToast(
-          detections.length > 0
-            ? `Detected ${detections.length} text token${detections.length > 1 ? 's' : ''}.`
+          filteredDetections.length > 0
+            ? `Detected ${filteredDetections.length} text token${filteredDetections.length > 1 ? 's' : ''}.`
             : 'No text detected.',
-          detections.length > 0 ? 'success' : 'info'
+          filteredDetections.length > 0 ? 'success' : 'info'
         );
-        if (detections.length > 0) {
+        if (filteredDetections.length > 0) {
           window.setTimeout(() => {
             focusReplacementInput(true);
           }, 0);
@@ -1382,14 +2255,27 @@
       }
 
       const overrideAutoFit = options && typeof options.autoFit === 'boolean' ? options.autoFit : null;
-      const autoFit = overrideAutoFit !== null
+      let autoFit = overrideAutoFit !== null
         ? overrideAutoFit
         : !!(dom.smartTextAutoSizeInput && dom.smartTextAutoSizeInput.checked);
-      const lockSourceSize = !!(options && options.lockSourceSize);
+      let lockSourceSize = !!(options && options.lockSourceSize);
+      let expandWidthToFit = true;
+      const strictness = normalizeTextStrictness(state.textStrictness);
+      if (strictness === 'strict') {
+        lockSourceSize = true;
+        if (overrideAutoFit === null) autoFit = false;
+        expandWidthToFit = false;
+      } else if (strictness === 'loose') {
+        lockSourceSize = false;
+        if (overrideAutoFit === null) autoFit = true;
+        expandWidthToFit = true;
+      }
       const closeEditor = !!(options && options.closeEditor);
       const fontFamily = resolveTextFontFamily();
+      const sizeScale = clamp(state.textReplaceSizeScale, 70, 170) / 100;
 
-      pushHistory(img);
+      prepareForDirectCanvasEdit(img);
+      pushHistory(img, 'Replace text');
       let result;
       try {
         result = textTools.applySmartTextReplace({
@@ -1401,7 +2287,8 @@
           fontFamily,
           autoFit,
           lockSourceSize,
-          expandWidthToFit: true
+          expandWidthToFit,
+          sizeScale
         });
       } catch (error) {
         console.error('Text replacement failed:', error);
@@ -1435,6 +2322,7 @@
       if (dom.textQuickInput) {
         dom.textQuickInput.value = replacement;
       }
+      syncSelectedTextBoxPositionFields();
       markImageModified(img);
       requestThumbnailsRender(true);
       renderCanvas();
@@ -1452,165 +2340,111 @@
       showToast('Text replaced successfully.', 'success');
     }
 
+    function getUiFlowController() {
+      if (!uiFlowController) {
+        uiFlowController = createUiFlowController({
+          state,
+          dom,
+          maxTotalPixels: MAX_TOTAL_PIXELS,
+          isMobileView,
+          loadFilesIntoState,
+          setStatus,
+          showToast,
+          openModal,
+          closeModal
+        });
+      }
+      return uiFlowController;
+    }
+
     function openCameraSheet() {
-      openModal(dom.cameraSheet);
+      getUiFlowController().openCameraSheet();
     }
 
     function closeCameraSheet() {
-      closeModal(dom.cameraSheet);
+      getUiFlowController().closeCameraSheet();
     }
 
     function stopLiveCaptureStream() {
-      if (!liveCaptureStream) return;
-      const tracks = typeof liveCaptureStream.getTracks === 'function'
-        ? liveCaptureStream.getTracks()
-        : [];
-      tracks.forEach((track) => {
-        try {
-          track.stop();
-        } catch (error) {}
-      });
-      liveCaptureStream = null;
-      if (dom.liveCaptureVideo) {
-        dom.liveCaptureVideo.srcObject = null;
-      }
+      getUiFlowController().stopLiveCaptureStream();
     }
 
     function closeLiveCaptureModal() {
-      stopLiveCaptureStream();
-      closeModal(dom.liveCaptureModal);
+      getUiFlowController().closeLiveCaptureModal();
     }
 
     function shouldUseNativeMobileCamera() {
-      const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
-      return isMobileView() || coarsePointer;
+      return getUiFlowController().shouldUseNativeMobileCamera();
     }
 
     async function openLiveCaptureModal(preset = 'photo') {
-      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-        throw new Error('Live capture unsupported');
-      }
-      if (!dom.liveCaptureVideo) {
-        throw new Error('Live capture UI missing');
-      }
-
-      const desiredFacing = preset === 'scan' ? 'environment' : 'user';
-      const fallbackFacing = desiredFacing === 'environment' ? 'user' : 'environment';
-      let stream;
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: desiredFacing },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
-      } catch (error) {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: fallbackFacing },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
-          audio: false
-        });
-      }
-
-      liveCapturePreset = preset;
-      liveCaptureStream = stream;
-      dom.liveCaptureVideo.srcObject = stream;
-      openModal(dom.liveCaptureModal);
-      try {
-        await dom.liveCaptureVideo.play();
-      } catch (error) {}
-      setStatus('Camera ready. Capture an image.');
+      await getUiFlowController().openLiveCaptureModal(preset);
     }
 
     async function captureLiveFrame() {
-      if (!dom.liveCaptureVideo) return;
-      const video = dom.liveCaptureVideo;
-      const width = video.videoWidth || 0;
-      const height = video.videoHeight || 0;
-      if (!width || !height) {
-        showToast('Camera is still starting. Try again.', 'info');
-        return;
-      }
-
-      const captureCanvas = document.createElement('canvas');
-      captureCanvas.width = width;
-      captureCanvas.height = height;
-      const ctx = captureCanvas.getContext('2d');
-      if (!ctx) {
-        showToast('Capture failed. Please retry.', 'error');
-        return;
-      }
-      ctx.drawImage(video, 0, 0, width, height);
-
-      const blob = await new Promise((resolve) => {
-        captureCanvas.toBlob(resolve, 'image/jpeg', 0.92);
-      });
-      if (!blob) {
-        showToast('Unable to capture image.', 'error');
-        return;
-      }
-
-      const file = new File([blob], `capture-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      closeLiveCaptureModal();
-      await loadFilesIntoState([file], 'Camera capture complete', { cameraPreset: liveCapturePreset });
+      await getUiFlowController().captureLiveFrame();
     }
 
     async function startCaptureFlow(preset = 'photo') {
-      state.cameraPreset = preset;
-      if (shouldUseNativeMobileCamera()) {
-        if (preset === 'scan') {
-          dom.cameraScanInput.click();
-        } else {
-          dom.cameraPhotoInput.click();
-        }
-        return;
-      }
-
-      try {
-        await openLiveCaptureModal(preset);
-      } catch (error) {
-        console.error('Live camera failed:', error);
-        showToast('Webcam unavailable. Falling back to picker.', 'info');
-        dom.cameraPhotoInput.click();
-      }
+      await getUiFlowController().startCaptureFlow(preset);
     }
 
     function openImportSheet() {
-      openModal(dom.importSheet);
+      getUiFlowController().openImportSheet();
     }
 
     function closeImportSheet() {
-      closeModal(dom.importSheet);
+      getUiFlowController().closeImportSheet();
     }
 
     function openSettingsSheet() {
-      openModal(dom.settingsSheet);
-      if (dom.openSettingsBtn) {
-        dom.openSettingsBtn.classList.add('active');
-        dom.openSettingsBtn.setAttribute('aria-pressed', 'true');
-      }
+      getUiFlowController().openSettingsSheet();
     }
 
     function closeSettingsSheet() {
-      closeModal(dom.settingsSheet);
-      if (dom.openSettingsBtn) {
-        dom.openSettingsBtn.classList.remove('active');
-        dom.openSettingsBtn.setAttribute('aria-pressed', 'false');
-      }
+      getUiFlowController().closeSettingsSheet();
     }
 
     function openHelpSheet() {
-      openModal(dom.helpSheet);
+      getUiFlowController().openHelpSheet();
     }
 
     function closeHelpSheet() {
-      closeModal(dom.helpSheet);
+      getUiFlowController().closeHelpSheet();
+    }
+
+    function buildReportIssueSnapshot() {
+      return getUiFlowController().buildReportIssueSnapshot();
+    }
+
+    function openReportIssueSheet() {
+      getUiFlowController().openReportIssueSheet();
+    }
+
+    function closeReportIssueSheet() {
+      getUiFlowController().closeReportIssueSheet();
+    }
+
+    function buildReportIssueFilename() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mi = String(now.getMinutes()).padStart(2, '0');
+      return `liteedit-report-${yyyy}${mm}${dd}-${hh}${mi}.json`;
+    }
+
+    function downloadTextFile(text, filename, mimeType = 'application/json') {
+      const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
     }
 
     function applyExportMode(mode) {
@@ -1622,6 +2456,9 @@
       dom.exportModeBulkBtn.classList.toggle('active', nextMode === 'bulk');
       dom.downloadBtn.style.display = nextMode === 'single' ? 'inline-flex' : 'none';
       dom.downloadAllBtn.style.display = nextMode === 'bulk' ? 'inline-flex' : 'none';
+      if (dom.cancelExportQueueBtn) {
+        dom.cancelExportQueueBtn.style.display = nextMode === 'bulk' ? 'inline-flex' : 'none';
+      }
       localStorage.setItem('liteedit_export_mode', nextMode);
       updateBulkPdfModeVisibility();
       updateBulkOptionsUI();
@@ -1677,6 +2514,37 @@
       if (dom.bulkSequentialBaseInput) {
         dom.bulkSequentialBaseInput.value = state.bulkSequentialBase;
       }
+    }
+
+    function applyBulkNameTemplateEnabled(enabled) {
+      state.bulkUseNameTemplate = !!enabled;
+      localStorage.setItem('liteedit_bulk_use_name_template', state.bulkUseNameTemplate ? 'true' : 'false');
+      if (dom.bulkUseTemplateInput) {
+        dom.bulkUseTemplateInput.checked = state.bulkUseNameTemplate;
+      }
+      updateBulkOptionsUI();
+      updateActionAvailability();
+      updateExportSummary();
+    }
+
+    function applyBulkNameTemplateValue(value) {
+      const raw = String(value || '').trim();
+      state.bulkNameTemplate = raw || '{name}_{n}';
+      localStorage.setItem('liteedit_bulk_name_template', state.bulkNameTemplate);
+      if (dom.bulkNameTemplateInput) {
+        dom.bulkNameTemplateInput.value = state.bulkNameTemplate;
+      }
+      updateExportSummary();
+    }
+
+    function applyBulkNameSuffixValue(value) {
+      const normalized = sanitizeFileName(value || '').replace(/\.[^.]+$/, '').trim();
+      state.bulkNameSuffix = normalized;
+      localStorage.setItem('liteedit_bulk_name_suffix', state.bulkNameSuffix);
+      if (dom.bulkNameSuffixInput) {
+        dom.bulkNameSuffixInput.value = state.bulkNameSuffix;
+      }
+      updateExportSummary();
     }
 
     function updateBulkPdfModeVisibility() {
@@ -1765,6 +2633,10 @@
         return;
       }
       renderBulkFilesPanel();
+      resetBulkStatuses();
+      if (dom.cancelExportQueueBtn) {
+        dom.cancelExportQueueBtn.disabled = true;
+      }
       updateExportSizeEstimate();
       updateExportSummary();
     }
@@ -1833,6 +2705,8 @@
       if (options.cameraPreset === 'scan') {
         enhanceDocumentCanvas(baseCanvas);
       }
+      const pixelCount = baseCanvas.width * baseCanvas.height;
+      const largeImage = pixelCount >= LARGE_IMAGE_PIXEL_THRESHOLD;
 
       return {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1851,6 +2725,10 @@
         sourceWidth: importResult.sourceW,
         sourceHeight: importResult.sourceH,
         wasDownscaledOnImport: importResult.wasDownscaled,
+        largeImage,
+        pixelCount,
+        adjustmentStack: [],
+        adjustmentBaseCanvas: null,
         textDetections: [],
         thumbRevision: -1,
         thumbDataUrl: ''
@@ -1888,6 +2766,7 @@
       img.dirty = true;
       img.revision += 1;
       img.thumbRevision = -1;
+      scheduleSessionAutosave();
     }
 
     function refreshDirtyState(img) {
@@ -1906,10 +2785,27 @@
     function getRenderSourceCanvas() {
       const img = activeImage();
       if (!img) return null;
+      if (state.comparePreviewActive && img.originalCanvas) {
+        return img.originalCanvas;
+      }
       const preview = state.adjustmentPreview;
       return (preview.active && preview.imageId === img.id && preview.previewCanvas)
         ? preview.previewCanvas
         : img.canvas;
+    }
+
+    function getEditedRenderCanvas() {
+      const img = activeImage();
+      if (!img) return null;
+      const preview = state.adjustmentPreview;
+      return (preview.active && preview.imageId === img.id && preview.previewCanvas)
+        ? preview.previewCanvas
+        : img.canvas;
+    }
+
+    function getSplitCompareX(canvasWidth) {
+      const ratio = clamp(parseInt(state.splitComparePosition, 10) || 50, 10, 90) / 100;
+      return clamp(Math.round(canvasWidth * ratio), 1, Math.max(1, canvasWidth - 1));
     }
 
     function syncMobileAdjustOverlay() {
@@ -1968,7 +2864,18 @@
       temp.height = baseCanvas.height;
       const tctx = temp.getContext('2d');
       tctx.filter = `brightness(${values.brightness}%) contrast(${values.contrast}%) saturate(${values.saturation}%) blur(${values.globalBlur}px)`;
-      tctx.drawImage(baseCanvas, 0, 0);
+      if (baseCanvas.width * baseCanvas.height >= LARGE_IMAGE_PIXEL_THRESHOLD) {
+        const tileSize = ADJUST_TILE_SIZE;
+        for (let y = 0; y < baseCanvas.height; y += tileSize) {
+          for (let x = 0; x < baseCanvas.width; x += tileSize) {
+            const w = Math.min(tileSize, baseCanvas.width - x);
+            const h = Math.min(tileSize, baseCanvas.height - y);
+            tctx.drawImage(baseCanvas, x, y, w, h, x, y, w, h);
+          }
+        }
+      } else {
+        tctx.drawImage(baseCanvas, 0, 0);
+      }
       return temp;
     }
 
@@ -2001,15 +2908,14 @@
       if (!img || !preview.active || preview.imageId !== img.id || !preview.previewCanvas) {
         return;
       }
-      pushHistory(img);
-      img.canvas = cloneCanvas(preview.previewCanvas);
-      markImageModified(img);
+      const applied = appendAdjustmentStepToImage(img, getAdjustmentValues(), { silent: true });
       clearAdjustmentPreview();
-      renderCanvas();
-      requestThumbnailsRender(true);
-      updateUndoRedoState();
-      setStatus('Adjustments applied');
-      updateExportSizeEstimate();
+      if (!applied) {
+        renderCanvas();
+        setStatus('Adjustment preview dismissed');
+        return;
+      }
+      setStatus('Adjustment step added');
     }
 
     function finalizeAdjustmentGesture() {
@@ -2070,6 +2976,71 @@
       return sourceCanvas.toDataURL('image/png');
     }
 
+    function cloneTextDetectionsSnapshot(detections) {
+      if (!Array.isArray(detections)) return [];
+      return detections.map((item) => ({ ...item }));
+    }
+
+    function createHistoryEntry(imgState, action = 'Edit') {
+      const nextAction = typeof action === 'string' && action.trim() ? action.trim() : 'Edit';
+      return {
+        snapshot: canvasSnapshot(imgState.canvas),
+        action: nextAction,
+        textDetections: cloneTextDetectionsSnapshot(imgState.textDetections),
+        textSelectionIndex: imgState === activeImage() ? state.textSelectionIndex : -1
+      };
+    }
+
+    function readHistoryEntry(entry) {
+      if (typeof entry === 'string') {
+        return {
+          snapshot: entry,
+          action: 'Edit',
+          textDetections: null,
+          textSelectionIndex: -1
+        };
+      }
+      if (!entry || typeof entry !== 'object') return null;
+      const snapshot = typeof entry.snapshot === 'string'
+        ? entry.snapshot
+        : (typeof entry.dataUrl === 'string' ? entry.dataUrl : '');
+      if (!snapshot) return null;
+      return {
+        snapshot,
+        action: typeof entry.action === 'string' && entry.action.trim() ? entry.action.trim() : 'Edit',
+        textDetections: Array.isArray(entry.textDetections) ? cloneTextDetectionsSnapshot(entry.textDetections) : null,
+        textSelectionIndex: Number.isInteger(entry.textSelectionIndex) ? entry.textSelectionIndex : -1
+      };
+    }
+
+    async function restoreFromHistoryEntry(imgState, entry) {
+      const normalized = readHistoryEntry(entry);
+      if (!normalized) return null;
+      await restoreFromDataUrl(imgState, normalized.snapshot);
+      if (Array.isArray(normalized.textDetections)) {
+        imgState.textDetections = cloneTextDetectionsSnapshot(normalized.textDetections);
+      } else {
+        imgState.textDetections = [];
+      }
+      if (imgState === activeImage()) {
+        if (imgState.textDetections.length === 0) {
+          state.textSelectionIndex = -1;
+        } else {
+          state.textSelectionIndex = clamp(
+            normalized.textSelectionIndex >= 0 ? normalized.textSelectionIndex : 0,
+            0,
+            imgState.textDetections.length - 1
+          );
+        }
+      }
+      return normalized;
+    }
+
+    function getHistoryEntryAction(entry) {
+      const normalized = readHistoryEntry(entry);
+      return normalized ? normalized.action : 'Edit';
+    }
+
     function restoreFromDataUrl(imgState, dataUrl) {
       return new Promise((resolve) => {
         const img = new Image();
@@ -2085,21 +3056,34 @@
       });
     }
 
-    function pushHistory(imgState) {
+    function pushHistory(imgState, action = 'Edit') {
       if (!imgState) return;
-      imgState.history.push(canvasSnapshot(imgState.canvas));
+      imgState.history.push(createHistoryEntry(imgState, action));
       if (imgState.history.length > HISTORY_LIMIT) imgState.history.shift();
       imgState.future.length = 0;
     }
 
     function updateUndoRedoState() {
       const img = activeImage();
-      const canUndo = !!img && img.history.length > 0;
-      const canRedo = !!img && img.future.length > 0;
-      dom.undoBtn.disabled = !canUndo;
-      dom.redoBtn.disabled = !canRedo;
-      if (dom.floatingUndoBtn) dom.floatingUndoBtn.disabled = !canUndo;
-      if (dom.floatingRedoBtn) dom.floatingRedoBtn.disabled = !canRedo;
+      const undoCount = img ? img.history.length : 0;
+      const redoCount = img ? img.future.length : 0;
+      const canUndo = undoCount > 0;
+      const canRedo = redoCount > 0;
+      const nextUndoAction = canUndo ? getHistoryEntryAction(img.history[img.history.length - 1]) : '';
+      const nextRedoAction = canRedo ? getHistoryEntryAction(img.future[img.future.length - 1]) : '';
+      const applyHistoryButtonState = (button, enabled, count, action, label) => {
+        if (!button) return;
+        button.disabled = !enabled;
+        button.dataset.count = enabled ? String(Math.min(count, 99)) : '';
+        button.title = enabled ? `${label}: ${action}` : label;
+        button.setAttribute('aria-label', enabled
+          ? `${label}. ${count} step${count > 1 ? 's' : ''} available. Next action: ${action}.`
+          : `${label} unavailable`);
+      };
+      applyHistoryButtonState(dom.undoBtn, canUndo, undoCount, nextUndoAction, 'Undo');
+      applyHistoryButtonState(dom.redoBtn, canRedo, redoCount, nextRedoAction, 'Redo');
+      applyHistoryButtonState(dom.floatingUndoBtn, canUndo, undoCount, nextUndoAction, 'Undo');
+      applyHistoryButtonState(dom.floatingRedoBtn, canRedo, redoCount, nextRedoAction, 'Redo');
       updateActionAvailability();
     }
 
@@ -2109,6 +3093,13 @@
       dom.widthInput.value = img.canvas.width;
       dom.heightInput.value = img.canvas.height;
       dom.renameInput.value = img.name;
+      ensureImageAdjustmentModel(img);
+      if (img.adjustmentStack.length === 0) {
+        state.adjustmentStepSelectionIndex = -1;
+      } else if (state.adjustmentStepSelectionIndex < 0 || state.adjustmentStepSelectionIndex >= img.adjustmentStack.length) {
+        state.adjustmentStepSelectionIndex = img.adjustmentStack.length - 1;
+      }
+      renderAdjustmentStackList();
       syncTextEditPanel();
     }
 
@@ -2144,8 +3135,22 @@
         renderBulkFilesPanel();
       }
       updateExportSummary();
+      scheduleSessionAutosave();
     }
 
+
+    function updateLargeImageBadge(img = activeImage()) {
+      if (!dom.largeImageBadge) return;
+      if (!img || !img.largeImage) {
+        dom.largeImageBadge.hidden = true;
+        dom.largeImageBadge.textContent = '';
+        return;
+      }
+      const pixels = img.pixelCount || (img.canvas.width * img.canvas.height);
+      const megaPixels = pixels / 1000000;
+      dom.largeImageBadge.hidden = false;
+      dom.largeImageBadge.textContent = `Large Image Mode • ${megaPixels.toFixed(1)} MP • Render budget active`;
+    }
 
     function updateLiveImageInfo() {
       const img = activeImage();
@@ -2153,13 +3158,18 @@
         dom.liveImageInfo.textContent = '';
         dom.liveImageInfo.style.display = 'none';
         dom.exportSizeInfo.textContent = 'Estimated size: --';
+        updateLargeImageBadge(null);
         return;
       }
       const optimizedTag = img.wasDownscaledOnImport
         ? ` | Optimized from ${img.sourceWidth}x${img.sourceHeight}`
         : '';
-      dom.liveImageInfo.textContent = `${img.canvas.width}x${img.canvas.height} | Source ${img.sizeKB} KB${optimizedTag}`;
+      const compareTag = state.comparePreviewActive ? ' | Comparing original' : '';
+      const splitTag = state.splitCompareActive ? ` | Split ${state.splitComparePosition}%` : '';
+      const largeTag = img.largeImage ? ' | Large image mode' : '';
+      dom.liveImageInfo.textContent = `${img.canvas.width}x${img.canvas.height} | Source ${img.sizeKB} KB${optimizedTag}${largeTag}${compareTag}${splitTag}`;
       dom.liveImageInfo.style.display = 'inline-flex';
+      updateLargeImageBadge(img);
     }
 
     async function updateExportSizeEstimate() {
@@ -2237,7 +3247,7 @@
           <img alt="${img.name}" loading="lazy" decoding="async">
           <div class="thumb-meta">
             <div class="thumb-name">${img.name}</div>
-            <div class="thumb-size">${img.sizeKB} KB</div>
+            <div class="thumb-size">${img.sizeKB} KB <span class="thumb-dirty${img.dirty ? ' active' : ''}">Edited</span></div>
           </div>
           <button class="x-btn" title="Remove image">×</button>
         `;
@@ -2293,6 +3303,7 @@
         renderBulkFilesPanel();
       }
       updateActionAvailability();
+      scheduleSessionAutosave();
     }
 
     function removeImage(index) {
@@ -2313,6 +3324,7 @@
         updateExportSummary();
         renderBulkFilesPanel();
         updateActionAvailability();
+        scheduleSessionAutosave({ immediate: true });
         return;
       }
 
@@ -2331,16 +3343,79 @@
         renderBulkFilesPanel();
       }
       updateActionAvailability();
+      scheduleSessionAutosave({ immediate: true });
     }
 
-    function renderCanvas() {
+    function shouldUseStrictRenderBudget() {
+      const img = activeImage();
+      return !!(img && img.largeImage);
+    }
+
+    function scheduleBudgetedRender() {
+      const budget = state.renderBudget;
+      budget.pending = true;
+      if (budget.scheduled) return;
+      budget.scheduled = true;
+
+      const runRender = () => {
+        budget.timerId = 0;
+        budget.scheduled = false;
+        if (!budget.pending) return;
+        budget.pending = false;
+        renderCanvasNow();
+        budget.lastRenderTs = performance.now();
+        if (budget.pending) {
+          scheduleBudgetedRender();
+        }
+      };
+
+      const elapsed = performance.now() - budget.lastRenderTs;
+      const wait = Math.max(0, budget.minIntervalMs - elapsed);
+      if (wait > 0) {
+        budget.timerId = window.setTimeout(() => {
+          requestAnimationFrame(runRender);
+        }, wait);
+        return;
+      }
+      requestAnimationFrame(runRender);
+    }
+
+    function renderCanvas(options = {}) {
+      const force = !!(options && options.force);
+      if (!force && shouldUseStrictRenderBudget()) {
+        scheduleBudgetedRender();
+        return;
+      }
+      const budget = state.renderBudget;
+      budget.pending = false;
+      if (budget.timerId) {
+        clearTimeout(budget.timerId);
+        budget.timerId = 0;
+      }
+      budget.scheduled = false;
+      renderCanvasNow();
+      budget.lastRenderTs = performance.now();
+    }
+
+    function renderCanvasNow() {
       const img = activeImage();
       if (!img) {
+        state.comparePreviewActive = false;
         resetViewport();
         dom.appRoot.classList.add('empty-launch');
+        dom.appRoot.classList.remove('compare-active');
+        dom.appRoot.classList.remove('split-compare-active');
+        dom.appRoot.classList.remove('large-image-mode');
         dom.canvas.style.display = 'none';
         dom.emptyState.style.display = 'block';
         dom.cropTip.style.display = 'none';
+        if (dom.compareTools) {
+          dom.compareTools.classList.toggle('split-active', !!state.splitCompareActive);
+        }
+        if (dom.toggleSplitCompareBtn) {
+          dom.toggleSplitCompareBtn.classList.toggle('active', !!state.splitCompareActive);
+          dom.toggleSplitCompareBtn.setAttribute('aria-pressed', state.splitCompareActive ? 'true' : 'false');
+        }
         hideTextQuickEditor();
         dom.renameInput.value = '';
         state.textSelectionIndex = -1;
@@ -2350,27 +3425,75 @@
       }
 
       const sourceCanvas = getRenderSourceCanvas();
+      const editedCanvas = getEditedRenderCanvas();
+      const splitActive = !!(state.splitCompareActive && !state.comparePreviewActive && img.originalCanvas && editedCanvas);
 
       dom.canvas.width = sourceCanvas.width;
       dom.canvas.height = sourceCanvas.height;
       const ctx = dom.canvas.getContext('2d');
       ctx.clearRect(0, 0, dom.canvas.width, dom.canvas.height);
-      ctx.drawImage(sourceCanvas, 0, 0);
+      if (splitActive) {
+        const splitX = getSplitCompareX(dom.canvas.width);
+        ctx.drawImage(editedCanvas, 0, 0);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, splitX, dom.canvas.height);
+        ctx.clip();
+        ctx.drawImage(img.originalCanvas, 0, 0);
+        ctx.restore();
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(splitX + 0.5, 0);
+        ctx.lineTo(splitX + 0.5, dom.canvas.height);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        const label = 'Before | After';
+        const labelWidth = ctx.measureText(label).width + 18;
+        const labelX = clamp(splitX - Math.round(labelWidth / 2), 8, Math.max(8, dom.canvas.width - labelWidth - 8));
+        const labelY = 10;
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(labelX, labelY, labelWidth, 24, 999);
+          ctx.fill();
+        } else {
+          ctx.fillRect(labelX, labelY, labelWidth, 24);
+        }
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '600 12px "Segoe UI", Arial, sans-serif';
+        ctx.fillText(label, labelX + 9, labelY + 16);
+        ctx.restore();
+      } else {
+        ctx.drawImage(sourceCanvas, 0, 0);
+      }
 
-      if (state.cropRect) {
+      if (state.cropRect && !state.comparePreviewActive) {
         const r = normalizeCropRect(state.cropRect);
         state.cropRect = r;
         drawCropOverlay(ctx, r);
       }
 
-      drawTextDetections(ctx);
+      if (!state.comparePreviewActive) {
+        drawTextDetections(ctx);
+      }
 
       dom.emptyState.style.display = 'none';
       dom.appRoot.classList.remove('empty-launch');
+      dom.appRoot.classList.toggle('compare-active', state.comparePreviewActive);
+      dom.appRoot.classList.toggle('split-compare-active', splitActive);
+      dom.appRoot.classList.toggle('large-image-mode', !!img.largeImage);
+      if (dom.compareTools) {
+        dom.compareTools.classList.toggle('split-active', !!state.splitCompareActive);
+      }
+      if (dom.toggleSplitCompareBtn) {
+        dom.toggleSplitCompareBtn.classList.toggle('active', !!state.splitCompareActive);
+        dom.toggleSplitCompareBtn.setAttribute('aria-pressed', state.splitCompareActive ? 'true' : 'false');
+      }
       dom.canvas.style.display = 'block';
-      dom.canvas.style.cursor = state.tool === 'crop' ? 'crosshair' : 'default';
+      updateCanvasCursor();
       applyCanvasViewport();
-      dom.cropTip.style.display = state.tool === 'crop' ? 'block' : 'none';
+      dom.cropTip.style.display = (state.tool === 'crop' && !state.comparePreviewActive) ? 'block' : 'none';
       syncTextQuickEditor();
       syncMobileAdjustOverlay();
       updateLiveImageInfo();
@@ -2535,6 +3658,70 @@
       return parts[0] / parts[1];
     }
 
+    function setCropRatioValue(ratioLabel) {
+      const allowed = Array.from(dom.cropRatioInput.options || []).some((option) => option.value === ratioLabel);
+      const next = allowed ? ratioLabel : 'free';
+      state.cropRatio = next;
+      dom.cropRatioInput.value = next;
+      localStorage.setItem('liteedit_crop_ratio', next);
+    }
+
+    function createCenteredCropRect(width, height, ratio) {
+      if (!ratio || !Number.isFinite(ratio) || ratio <= 0) {
+        return { x: 0, y: 0, w: width, h: height };
+      }
+      let cropW = width;
+      let cropH = Math.round(cropW / ratio);
+      if (cropH > height) {
+        cropH = height;
+        cropW = Math.round(cropH * ratio);
+      }
+      cropW = clamp(cropW, 1, width);
+      cropH = clamp(cropH, 1, height);
+      return {
+        x: Math.max(0, Math.round((width - cropW) / 2)),
+        y: Math.max(0, Math.round((height - cropH) / 2)),
+        w: cropW,
+        h: cropH
+      };
+    }
+
+    function applyCropPreset() {
+      const img = activeImage();
+      const preset = (dom.cropPresetInput && dom.cropPresetInput.value) || 'free';
+      setCropRatioValue(preset);
+      if (!img) {
+        setStatus(`Crop preset set to ${preset}`);
+        return;
+      }
+      const ratio = getCropRatioValue();
+      state.cropRect = createCenteredCropRect(img.canvas.width, img.canvas.height, ratio);
+      setTool('crop');
+      renderCanvas();
+      syncCropActionButtons();
+      setStatus(preset === 'free' ? 'Free crop enabled' : `Crop preset applied (${preset})`);
+    }
+
+    function applySocialPreset() {
+      const presetKey = dom.socialPresetInput ? dom.socialPresetInput.value : 'none';
+      if (!presetKey || presetKey === 'none' || !SOCIAL_PRESETS[presetKey]) {
+        setStatus('Select a social preset first');
+        return;
+      }
+      const preset = SOCIAL_PRESETS[presetKey];
+      dom.widthInput.value = String(preset.width);
+      dom.heightInput.value = String(preset.height);
+      if (dom.keepAspect) {
+        dom.keepAspect.checked = false;
+      }
+      if (preset.cropRatio) {
+        setCropRatioValue(preset.cropRatio);
+      }
+      applyResize();
+      setStatus(`Social preset applied: ${preset.width} x ${preset.height}`);
+      showToast('Social preset applied.', 'success');
+    }
+
     function applyAspectToDelta(dx, dy, ratio) {
       if (!ratio || !Number.isFinite(ratio)) return { dx, dy };
       const safeDx = Math.abs(dx) < 0.0001 ? (dx >= 0 ? 0.0001 : -0.0001) : dx;
@@ -2561,18 +3748,54 @@
       };
     }
 
-    function setTool(nextTool) {
-      state.tool = nextTool;
+    function getToolLabel(toolName) {
+      if (toolName === 'pen') return 'Pen';
+      if (toolName === 'highlighter') return 'Highlighter';
+      if (toolName === 'blur') return 'Blur brush';
+      if (toolName === 'crop') return 'Crop';
+      if (toolName === 'hand') return 'Pan';
+      return 'Tool';
+    }
+
+    function setTool(nextTool, { showStatus = false } = {}) {
+      const requestedTool = nextTool;
+      let resolvedTool = nextTool;
+      if (requestedTool === 'hand' && state.tool === 'hand') {
+        resolvedTool = state.lastNonHandTool || 'pen';
+      }
+
+      state.tool = resolvedTool;
+      if (resolvedTool !== 'hand') {
+        state.lastNonHandTool = resolvedTool;
+        if (state.canvasPan && state.canvasPan.active) {
+          endCanvasPan();
+        }
+      }
+      if (state.textAddPlacementActive && resolvedTool !== 'hand') {
+        setTextAddPlacementActive(false);
+      }
       state.cropRect = null;
       state.cropInteraction = null;
       dom.toolButtons.forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.tool === nextTool);
+        const active = btn.dataset.tool === resolvedTool;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
-      dom.appRoot.classList.toggle('crop-tool-active', nextTool === 'crop');
-      dom.appRoot.classList.toggle('draw-tool-idle', !(nextTool === 'pen' || nextTool === 'highlighter' || nextTool === 'blur'));
-      dom.appRoot.classList.toggle('draw-tool-blur', nextTool === 'blur');
+      const handToolBtn = dom.toolButtons.find((btn) => btn.dataset.tool === 'hand');
+      if (handToolBtn) {
+        const handActive = resolvedTool === 'hand';
+        const handLabel = handActive
+          ? 'Pan canvas active. Tap again to exit.'
+          : 'Pan canvas (toggle)';
+        handToolBtn.title = handLabel;
+        handToolBtn.setAttribute('aria-label', handLabel);
+      }
+      dom.appRoot.classList.toggle('crop-tool-active', resolvedTool === 'crop');
+      dom.appRoot.classList.toggle('draw-tool-idle', !(resolvedTool === 'pen' || resolvedTool === 'highlighter' || resolvedTool === 'blur'));
+      dom.appRoot.classList.toggle('draw-tool-blur', resolvedTool === 'blur');
+      dom.appRoot.classList.toggle('hand-tool-active', resolvedTool === 'hand');
 
-       const preset = TOOL_PRESETS[nextTool];
+       const preset = TOOL_PRESETS[resolvedTool];
        if (preset) {
         if (dom.brushSize) {
           dom.brushSize.value = String(preset.size);
@@ -2582,29 +3805,40 @@
           dom.blurStrength.value = String(preset.opacity);
           dom.blurStrengthVal.textContent = `${preset.opacity}%`;
         }
-        if (nextTool === 'pen') {
+        if (resolvedTool === 'pen') {
           state.penColor = state.penColor || preset.color;
           localStorage.setItem('liteedit_pen_color', state.penColor);
-        } else if (nextTool === 'highlighter') {
+        } else if (resolvedTool === 'highlighter') {
           state.highlighterColor = state.highlighterColor || preset.color;
           localStorage.setItem('liteedit_highlighter_color', state.highlighterColor);
         }
       }
 
       if (dom.highlighterColorInput) {
-        if (nextTool === 'pen') {
+        if (resolvedTool === 'pen') {
           dom.highlighterColorInput.value = state.penColor;
-        } else if (nextTool === 'highlighter') {
+        } else if (resolvedTool === 'highlighter') {
           dom.highlighterColorInput.value = state.highlighterColor;
-        } else if (nextTool === 'blur') {
+        } else if (resolvedTool === 'blur') {
           dom.highlighterColorInput.value = state.penColor;
         }
       }
-      dom.canvas.style.cursor = state.tool === 'crop' ? 'crosshair' : 'default';
-      dom.cropTip.style.display = nextTool === 'crop' ? 'block' : 'none';
+      updateCanvasCursor();
+      dom.cropTip.style.display = resolvedTool === 'crop' ? 'block' : 'none';
       updateActionAvailability();
       syncCropActionButtons();
       renderCanvas();
+      if (showStatus) {
+        if (requestedTool === 'hand' && resolvedTool !== 'hand') {
+          setStatus('Pan mode off');
+        } else if (resolvedTool === 'hand') {
+          setStatus(canPanCanvas()
+            ? 'Pan mode on. Drag the image. Tap hand again to exit.'
+            : 'Pan mode selected. Zoom in to drag, tap hand again to exit.');
+        } else {
+          setStatus(`${getToolLabel(resolvedTool)} tool selected`);
+        }
+      }
     }
 
     function blurBrush(imgState, cx, cy, radius, strength) {
@@ -2758,6 +3992,7 @@
 
       if (nextW === img.canvas.width && nextH === img.canvas.height && fitMethod === 'stretch') return;
 
+      prepareForDirectCanvasEdit(img);
       pushHistory(img);
       img.canvas = buildResizedCanvas(img.canvas, nextW, nextH, resizeMethod, fitMethod);
       markImageModified(img);
@@ -2769,9 +4004,76 @@
       updateExportSizeEstimate();
     }
 
+    function applyResizeToAll() {
+      if (state.images.length === 0) return;
+      const nextW = Math.max(1, parseInt(dom.widthInput.value, 10) || activeImage().canvas.width);
+      const nextH = Math.max(1, parseInt(dom.heightInput.value, 10) || activeImage().canvas.height);
+      const resizeMethod = resolveResizeMethod();
+      const fitMethod = resolveResizeFitMethod();
+      let changed = 0;
+
+      state.images.forEach((img) => {
+        if (nextW === img.canvas.width && nextH === img.canvas.height && fitMethod === 'stretch') {
+          return;
+        }
+        prepareForDirectCanvasEdit(img);
+        pushHistory(img);
+        img.canvas = buildResizedCanvas(img.canvas, nextW, nextH, resizeMethod, fitMethod);
+        markImageModified(img);
+        clearTextDetectionsForImage(img, { silent: true });
+        changed += 1;
+      });
+
+      if (changed === 0) {
+        setStatus('Resize all skipped (same dimensions).');
+        return;
+      }
+
+      syncInputsFromImage();
+      renderCanvas();
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      setStatus(`Resized ${changed} image${changed > 1 ? 's' : ''} to ${nextW} x ${nextH}`);
+      showToast(`Resize applied to ${changed} image${changed > 1 ? 's' : ''}.`, 'success');
+      updateExportSizeEstimate();
+    }
+
     function applyAdjustments() {
-      updateAdjustmentPreview();
-      commitAdjustmentPreview();
+      clearAdjustmentPreview();
+      const img = activeImage();
+      if (!img) return;
+      appendAdjustmentStepToImage(img, getAdjustmentValues());
+    }
+
+    function applyAdjustmentsToAll() {
+      if (state.images.length === 0) return;
+      const values = normalizeAdjustmentStep(getAdjustmentValues());
+      if (isNeutralAdjustmentStep(values)) {
+        showToast('Adjustment step skipped (no visual change).', 'info');
+        return;
+      }
+      let changed = 0;
+      state.images.forEach((img) => {
+        ensureImageAdjustmentModel(img);
+        if (!img.adjustmentBaseCanvas) {
+          img.adjustmentBaseCanvas = cloneCanvas(img.canvas);
+        }
+        pushHistory(img);
+        img.adjustmentStack.push(cloneAdjustmentStep(values));
+        rebuildCanvasFromAdjustmentStack(img);
+        clearTextDetectionsForImage(img, { silent: true });
+        changed += 1;
+      });
+      state.adjustmentStepSelectionIndex = activeImage() && activeImage().adjustmentStack
+        ? activeImage().adjustmentStack.length - 1
+        : -1;
+      renderCanvas();
+      renderAdjustmentStackList();
+      requestThumbnailsRender(true);
+      updateUndoRedoState();
+      setStatus(`Applied adjustments to ${changed} image${changed > 1 ? 's' : ''}`);
+      showToast(`Adjustments applied to ${changed} image${changed > 1 ? 's' : ''}.`, 'success');
+      updateExportSizeEstimate();
     }
 
 
@@ -2891,6 +4193,7 @@
       const img = activeImage();
       if (!img) return;
 
+      prepareForDirectCanvasEdit(img);
       pushHistory(img);
       const src = img.canvas;
       const next = document.createElement('canvas');
@@ -2915,6 +4218,7 @@
       const img = activeImage();
       if (!img) return;
 
+      prepareForDirectCanvasEdit(img);
       pushHistory(img);
       const src = img.canvas;
       const next = document.createElement('canvas');
@@ -2942,6 +4246,7 @@
     function resetToOriginal() {
       const img = activeImage();
       if (!img) return;
+      prepareForDirectCanvasEdit(img);
       pushHistory(img);
       img.canvas = cloneCanvas(img.originalCanvas);
       img.dirty = false;
@@ -2954,6 +4259,7 @@
       updateUndoRedoState();
       setStatus('Reset to original image');
       updateExportSizeEstimate();
+      scheduleSessionAutosave();
     }
 
     function applyCropFromRect() {
@@ -2975,6 +4281,7 @@
         return;
       }
 
+      prepareForDirectCanvasEdit(img);
       pushHistory(img);
       const cropped = canvasToolsModule.cropCanvas(img.canvas, { x, y, w, h });
       img.canvas = cropped;
@@ -3010,66 +4317,73 @@
     async function undo() {
       const img = activeImage();
       if (!img || img.history.length === 0) return;
-      img.future.push(canvasSnapshot(img.canvas));
+      clearAdjustmentPreview();
       const previous = img.history.pop();
-      await restoreFromDataUrl(img, previous);
+      img.future.push(createHistoryEntry(img, getHistoryEntryAction(previous)));
+      const restoredEntry = await restoreFromHistoryEntry(img, previous);
+      invalidateAdjustmentStackForImage(img);
       refreshDirtyState(img);
       img.revision += 1;
       img.thumbRevision = -1;
-      clearTextDetectionsForImage(img, { silent: true });
+      syncTextEditPanel({ preserveNoSelection: true });
       renderCanvas();
       requestThumbnailsRender(true);
       syncInputsFromImage();
       updateUndoRedoState();
-      setStatus('Undo complete');
+      setStatus(`Undo complete${restoredEntry ? ` (${restoredEntry.action})` : ''}`);
       updateExportSizeEstimate();
+      scheduleSessionAutosave();
     }
 
     async function redo() {
       const img = activeImage();
       if (!img || img.future.length === 0) return;
-      img.history.push(canvasSnapshot(img.canvas));
+      clearAdjustmentPreview();
       const next = img.future.pop();
-      await restoreFromDataUrl(img, next);
+      img.history.push(createHistoryEntry(img, getHistoryEntryAction(next)));
+      if (img.history.length > HISTORY_LIMIT) img.history.shift();
+      const restoredEntry = await restoreFromHistoryEntry(img, next);
+      invalidateAdjustmentStackForImage(img);
       refreshDirtyState(img);
       img.revision += 1;
       img.thumbRevision = -1;
-      clearTextDetectionsForImage(img, { silent: true });
+      syncTextEditPanel({ preserveNoSelection: true });
       renderCanvas();
       requestThumbnailsRender(true);
       syncInputsFromImage();
       updateUndoRedoState();
-      setStatus('Redo complete');c
+      setStatus(`Redo complete${restoredEntry ? ` (${restoredEntry.action})` : ''}`);
       updateExportSizeEstimate();
+      scheduleSessionAutosave();
+    }
+
+    function getExportController() {
+      if (!exportController) {
+        exportController = createExportController({
+          state,
+          dom,
+          sanitizeFileName,
+          getImageBaseName,
+          getExportEngineModule: () => exportEngineModule
+        });
+      }
+      return exportController;
     }
 
     function getExportFormat() {
-      return dom.formatInput.value;
+      return getExportController().getExportFormat();
     }
 
     function getQuality() {
-      return Math.min(1, Math.max(0.4, (parseInt(dom.qualityInput.value, 10) || 90) / 100));
+      return getExportController().getQuality();
     }
 
     function extensionForType(type) {
-      if (exportEngineModule && typeof exportEngineModule.extensionForType === 'function') {
-        return exportEngineModule.extensionForType(type);
-      }
-      if (type === 'image/png') return 'png';
-      if (type === 'image/webp') return 'webp';
-      if (type === 'image/avif') return 'avif';
-      if (type === 'application/pdf') return 'pdf';
-      return 'jpg';
+      return getExportController().extensionForType(type);
     }
 
     function buildFilename(name, type) {
-      if (exportEngineModule && typeof exportEngineModule.buildFilename === 'function') {
-        return exportEngineModule.buildFilename(name, type);
-      }
-      const ext = extensionForType(type);
-      const dot = name.lastIndexOf('.');
-      const base = dot > 0 ? name.slice(0, dot) : name;
-      return `${base}.${ext}`;
+      return getExportController().buildFilename(name, type);
     }
 
     async function exportCanvasToBlob(canvas, type, quality) {
@@ -3082,9 +4396,9 @@
       return engine.exportCanvasToPdfBlob(canvas, quality);
     }
 
-    async function exportAllToPdfBlob(images, quality, onProgress = null) {
+    async function exportAllToPdfBlob(images, quality, onProgress = null, shouldCancel = null) {
       const engine = await ensureExportEngineLoaded();
-      return engine.exportAllToPdfBlob(images, quality, onProgress);
+      return engine.exportAllToPdfBlob(images, quality, onProgress, shouldCancel);
     }
 
     async function saveExportBlob(blob, filename) {
@@ -3105,6 +4419,11 @@
         if (type === 'application/pdf') {
           const pdfBlob = await exportCanvasToPdfBlob(img.canvas, quality);
           if (!pdfBlob) {
+            if (exportQueue.cancelled) {
+              setStatus('Export cancelled');
+              showToast('Export cancelled.', 'info');
+              return;
+            }
             setStatus('PDF export unavailable');
             showToast('PDF export unavailable on this browser.', 'error');
             return;
@@ -3151,38 +4470,31 @@
     }
 
     function getBulkSequentialBaseName() {
-      const cleaned = sanitizeFileName(state.bulkSequentialBase || '').replace(/\.[^.]+$/, '').trim();
-      return cleaned || 'Name';
+      return getExportController().getBulkSequentialBaseName();
     }
 
     function shouldUseSequentialZipNames() {
-      return state.bulkExportMode === 'zip' && state.bulkAdvancedMode === 'sequential';
+      return getExportController().shouldUseSequentialZipNames();
+    }
+
+    function formatDateToken(date = new Date()) {
+      return getExportController().formatDateToken(date);
+    }
+
+    function formatTimeToken(date = new Date()) {
+      return getExportController().formatTimeToken(date);
+    }
+
+    function buildNameFromTemplate(template, values) {
+      return getExportController().buildNameFromTemplate(template, values);
     }
 
     function makeUniqueFilename(rawName, usedNames) {
-      if (!usedNames.has(rawName)) {
-        usedNames.add(rawName);
-        return rawName;
-      }
-      const dot = rawName.lastIndexOf('.');
-      const base = dot > 0 ? rawName.slice(0, dot) : rawName;
-      const ext = dot > 0 ? rawName.slice(dot) : '';
-      let index = 2;
-      let candidate = `${base}_${index}${ext}`;
-      while (usedNames.has(candidate)) {
-        index += 1;
-        candidate = `${base}_${index}${ext}`;
-      }
-      usedNames.add(candidate);
-      return candidate;
+      return getExportController().makeUniqueFilename(rawName, usedNames);
     }
 
     function buildBulkFilename(img, index, outputType, usedNames) {
-      const baseName = shouldUseSequentialZipNames()
-        ? `${getBulkSequentialBaseName()}${index + 1}`
-        : img.name;
-      const raw = buildFilename(baseName, outputType);
-      return makeUniqueFilename(raw, usedNames);
+      return getExportController().buildBulkFilename(img, index, outputType, usedNames);
     }
 
     async function exportImageForType(img, outputType, quality, stripMetadata) {
@@ -3213,8 +4525,10 @@
     async function saveBulkEntriesAsMultiple(entries, total) {
       let completed = 0;
       for (const entry of entries) {
+        if (exportQueue && exportQueue.cancelled) break;
         await saveExportBlob(entry.blob, entry.filename);
         completed += 1;
+        if (exportQueue) exportQueue.completed = completed;
         setExportProgress(completed, total, 'Saving files...');
         await nextFrame();
       }
@@ -3227,6 +4541,9 @@
       entries.forEach((entry) => {
         folder.file(entry.filename, entry.blob);
       });
+      if (exportQueue && exportQueue.cancelled) {
+        throw new Error('Export cancelled');
+      }
       return zip.generateAsync({ type: 'blob' });
     }
 
@@ -3237,6 +4554,16 @@
       const stripMetadata = dom.stripMetaInput.checked;
       const total = state.images.length;
       const totalOriginalBytes = getOriginalBytesForAll();
+      exportQueue = {
+        active: true,
+        cancelled: false,
+        total,
+        completed: 0
+      };
+      if (dom.cancelExportQueueBtn) {
+        dom.cancelExportQueueBtn.disabled = false;
+      }
+      resetBulkStatuses();
       dom.downloadAllBtn.disabled = true;
       dom.downloadBtn.disabled = true;
       const original = dom.downloadAllBtn.textContent;
@@ -3247,17 +4574,33 @@
         const typesByImage = state.images.map((img) => getBulkExportFormatForImage(img));
         const allPdf = typesByImage.length > 0 && typesByImage.every((entry) => entry === 'application/pdf');
         if (allPdf && state.bulkPdfMode === 'combined') {
-          const pdfBlob = await exportAllToPdfBlob(state.images, quality, (current, limit) => {
-            setExportProgress(current, limit, 'Rendering combined PDF...');
-          });
+          if (exportQueue.cancelled) {
+            setStatus('Export cancelled');
+            showToast('Export cancelled.', 'info');
+            return;
+          }
+          const pdfBlob = await exportAllToPdfBlob(
+            state.images,
+            quality,
+            (current, limit) => {
+              setExportProgress(current, limit, 'Rendering combined PDF...');
+            },
+            () => exportQueue && exportQueue.cancelled
+          );
           if (!pdfBlob) {
             setStatus('PDF export unavailable');
             showToast('PDF export unavailable on this browser.', 'error');
             return;
           }
+          if (exportQueue.cancelled) {
+            setStatus('Export cancelled');
+            showToast('Export cancelled.', 'info');
+            return;
+          }
           await saveExportBlob(pdfBlob, 'liteedit_exports.pdf');
           state.images.forEach((img) => {
             img.lastExportRevision = img.revision;
+            setBulkRowStatus(img, 'Done');
           });
           setExportSavings(totalOriginalBytes, pdfBlob.size);
           setExportProgress(total, total, 'Combined PDF ready');
@@ -3273,7 +4616,12 @@
         let completed = 0;
         for (let index = 0; index < state.images.length; index += 1) {
           const img = state.images[index];
+          if (exportQueue.cancelled) {
+            setBulkRowStatus(img, 'Cancelled');
+            break;
+          }
           const outputType = typesByImage[index];
+          setBulkRowStatus(img, 'Processing...');
           const exported = await exportImageForType(img, outputType, quality, stripMetadata);
           if (exported && exported.blob) {
             entries.push({
@@ -3281,9 +4629,19 @@
               filename: buildBulkFilename(img, index, exported.outputType, usedNames)
             });
             img.lastExportRevision = img.revision;
+            setBulkRowStatus(img, 'Ready');
+          } else {
+            setBulkRowStatus(img, 'Skipped');
           }
           completed += 1;
+          exportQueue.completed = completed;
           setExportProgress(completed, total, 'Preparing files...');
+        }
+
+        if (exportQueue.cancelled) {
+          setStatus('Export cancelled');
+          showToast('Export cancelled.', 'info');
+          return;
         }
 
         if (entries.length === 0) {
@@ -3297,6 +4655,11 @@
           const totalBytes = entries.reduce((sum, entry) => sum + (entry.blob && entry.blob.size ? entry.blob.size : 0), 0);
           setExportSavings(totalOriginalBytes, totalBytes);
           setExportProgress(total, total, 'Export complete');
+          state.images.forEach((img) => {
+            if (!img.exportStatus || img.exportStatus === 'Ready') {
+              setBulkRowStatus(img, 'Done');
+            }
+          });
           setStatus('Export successful');
           closeExportSheet();
           showToast('Export successful.', 'success');
@@ -3305,9 +4668,19 @@
         }
 
         const zipBlob = await saveBulkEntriesAsZip(entries);
+        if (exportQueue.cancelled) {
+          setStatus('Export cancelled');
+          showToast('Export cancelled.', 'info');
+          return;
+        }
         await saveExportBlob(zipBlob, 'liteedit_exports.zip');
         setExportSavings(totalOriginalBytes, zipBlob.size);
         setExportProgress(total, total, 'Export complete');
+        state.images.forEach((img) => {
+          if (!img.exportStatus || img.exportStatus === 'Ready') {
+            setBulkRowStatus(img, 'Done');
+          }
+        });
         setStatus('Export successful');
         closeExportSheet();
         showToast('Export successful.', 'success');
@@ -3317,6 +4690,10 @@
         setStatus('Bulk export failed');
         showToast('Bulk export failed. Please retry.', 'error');
       } finally {
+        exportQueue.active = false;
+        if (dom.cancelExportQueueBtn) {
+          dom.cancelExportQueueBtn.disabled = true;
+        }
         dom.downloadAllBtn.disabled = false;
         dom.downloadBtn.disabled = !activeImage();
         dom.downloadAllBtn.textContent = original;
@@ -3431,6 +4808,10 @@
       let addedCount = 0;
       let downscaledCount = 0;
       let decodeFailures = 0;
+      let blockedByMemory = 0;
+
+      const currentTotalPixels = state.images.reduce((sum, img) => sum + (img.pixelCount || (img.canvas.width * img.canvas.height)), 0);
+      let totalPixels = currentTotalPixels;
 
       for (let index = 0; index < accepted.length; index += 1) {
         if (jobToken !== importJobToken) return;
@@ -3443,6 +4824,12 @@
             return;
           }
           const imgState = createImageState(file, decodedImage, options);
+          if ((totalPixels + imgState.pixelCount) > MAX_TOTAL_PIXELS) {
+            blockedByMemory += 1;
+            showToast('Memory guard: skipping one large image to keep LiteEdit stable.', 'info');
+            continue;
+          }
+          totalPixels += imgState.pixelCount;
           if (imgState.wasDownscaledOnImport) downscaledCount += 1;
           state.images.push(imgState);
           addedCount += 1;
@@ -3481,9 +4868,13 @@
       if (downscaledCount > 0) {
         showToast(`Optimized ${downscaledCount} large image${downscaledCount > 1 ? 's' : ''} for smoother editing.`, 'success');
       }
+      if (blockedByMemory > 0) {
+        showToast(`Skipped ${blockedByMemory} image${blockedByMemory > 1 ? 's' : ''} due to memory guard.`, 'info');
+      }
       if (decodeFailures > 0) {
         showToast(`${decodeFailures} file${decodeFailures > 1 ? 's' : ''} failed to decode.`, 'error');
       }
+      scheduleSessionAutosave({ immediate: true });
       scheduleLazyWarmups();
     }
 
@@ -3524,236 +4915,118 @@
       void loadFilesIntoState(files, 'Drop import complete');
     }
 
+    function getCanvasInteractionController() {
+      if (!canvasInteractionController) {
+        canvasInteractionController = createCanvasInteractionController({
+          state,
+          dom,
+          clamp,
+          distanceBetweenTouches,
+          activeImage,
+          getCanvasCoords,
+          setTextAddPlacementActive,
+          placeNewTextBoxAtPoint,
+          shouldUsePanGesture,
+          beginCanvasPan,
+          updateCanvasPan,
+          endCanvasPan,
+          canPanCanvas,
+          getTextDetectionIndexAtPoint,
+          selectTextDetection,
+          beginTextBlockDrag,
+          updateTextBlockDrag,
+          endTextBlockDrag,
+          normalizeCropRect,
+          getCropHandleAtPoint,
+          getCropCursorAtPoint,
+          isPointInsideCropRect,
+          syncCropActionButtons,
+          updateCropCursor,
+          getCropRatioValue,
+          buildAspectRectFromAnchor,
+          clampCropRectToCanvas,
+          prepareForDirectCanvasEdit,
+          pushHistory,
+          renderCanvas,
+          updateActionAvailability,
+          drawStroke,
+          blurBrushStroke,
+          markImageModified,
+          requestThumbnailsRender,
+          updateUndoRedoState,
+          updateExportSizeEstimate,
+          updateCanvasCursor,
+          setCanvasZoom
+        });
+      }
+      return canvasInteractionController;
+    }
+
     // Canvas pointer handlers for pen/highlighter/blur/crop
     function onPointerDown(e) {
-      const img = activeImage();
-      const p = getCanvasCoords(e);
-      if (!img) return;
-      if (state.tool !== 'crop' && state.userMode === 'advanced') {
-        const hitIndex = getTextDetectionIndexAtPoint(p);
-        if (hitIndex >= 0) {
-          selectTextDetection(hitIndex, true);
-          state.drawing = false;
-          state.lastPoint = null;
-          dom.canvas.style.cursor = 'pointer';
-          e.preventDefault();
-          return;
-        }
-      }
-
-      state.drawing = true;
-      state.lastPoint = p;
-
-      if (state.tool === 'crop') {
-        const existing = normalizeCropRect(state.cropRect);
-        const handle = getCropHandleAtPoint(p, existing);
-        if (handle && existing) {
-          state.cropInteraction = {
-            mode: 'resize',
-            handle,
-            startPoint: p,
-            startRect: { ...existing }
-          };
-          dom.canvas.style.cursor = getCropCursorAtPoint(p, existing);
-        } else if (existing && isPointInsideCropRect(p, existing)) {
-          state.cropInteraction = {
-            mode: 'move',
-            dragOffsetX: p.x - existing.x,
-            dragOffsetY: p.y - existing.y,
-            startRect: { ...existing }
-          };
-          dom.canvas.style.cursor = 'move';
-        } else {
-          state.cropStart = p;
-          state.cropRect = { x: p.x, y: p.y, w: 1, h: 1 };
-          state.cropInteraction = { mode: 'new' };
-          dom.canvas.style.cursor = 'crosshair';
-        }
-        syncCropActionButtons();
-      } else {
-        pushHistory(img);
-      }
-
-      dom.canvas.setPointerCapture(e.pointerId);
-      e.preventDefault();
+      getCanvasInteractionController().onPointerDown(e);
     }
 
     function onPointerMove(e) {
-      const img = activeImage();
-      if (!img) return;
-      const p = getCanvasCoords(e);
-      if (state.textDrag) {
-        updateTextBlockDrag(p);
-        return;
-      }
-      if (state.tool === 'crop' && !state.drawing) {
-        updateCropCursor(p);
-        return;
-      }
-      if (!state.drawing) {
-        if (state.tool !== 'crop' && state.userMode === 'advanced') {
-          dom.canvas.style.cursor = getTextDetectionIndexAtPoint(p) >= 0 ? 'pointer' : 'default';
-        }
-        return;
-      }
-
-      if (state.tool === 'crop') {
-        const aspectRatio = getCropRatioValue();
-        const interaction = state.cropInteraction || { mode: 'new' };
-        if (interaction.mode === 'move' && state.cropRect) {
-          const rect = normalizeCropRect(state.cropRect);
-          const nextX = clamp(
-            p.x - interaction.dragOffsetX,
-            0,
-            Math.max(0, dom.canvas.width - rect.w)
-          );
-          const nextY = clamp(
-            p.y - interaction.dragOffsetY,
-            0,
-            Math.max(0, dom.canvas.height - rect.h)
-          );
-          state.cropRect = { x: nextX, y: nextY, w: rect.w, h: rect.h };
-        } else if (interaction.mode === 'resize' && interaction.startRect) {
-          const startRect = interaction.startRect;
-          const isCornerHandle = interaction.handle.length === 2;
-          if (aspectRatio && isCornerHandle) {
-            let anchor = { x: startRect.x, y: startRect.y };
-            if (interaction.handle === 'nw') anchor = { x: startRect.x + startRect.w, y: startRect.y + startRect.h };
-            if (interaction.handle === 'ne') anchor = { x: startRect.x, y: startRect.y + startRect.h };
-            if (interaction.handle === 'sw') anchor = { x: startRect.x + startRect.w, y: startRect.y };
-            if (interaction.handle === 'se') anchor = { x: startRect.x, y: startRect.y };
-            state.cropRect = clampCropRectToCanvas(
-              buildAspectRectFromAnchor(anchor.x, anchor.y, p.x, p.y, aspectRatio)
-            );
-            renderCanvas();
-            updateActionAvailability();
-            return;
-          }
-          let left = startRect.x;
-          let right = startRect.x + startRect.w;
-          let top = startRect.y;
-          let bottom = startRect.y + startRect.h;
-
-          if (interaction.handle.includes('w')) left = p.x;
-          if (interaction.handle.includes('e')) right = p.x;
-          if (interaction.handle.includes('n')) top = p.y;
-          if (interaction.handle.includes('s')) bottom = p.y;
-
-          const minSize = 3;
-          if (Math.abs(right - left) < minSize) {
-            if (interaction.handle.includes('w')) left = right - minSize;
-            else right = left + minSize;
-          }
-          if (Math.abs(bottom - top) < minSize) {
-            if (interaction.handle.includes('n')) top = bottom - minSize;
-            else bottom = top + minSize;
-          }
-
-          state.cropRect = clampCropRectToCanvas({
-            x: Math.min(left, right),
-            y: Math.min(top, bottom),
-            w: Math.abs(right - left),
-            h: Math.abs(bottom - top)
-          });
-        } else {
-          const sx = state.cropStart.x;
-          const sy = state.cropStart.y;
-          const nextRect = aspectRatio
-            ? buildAspectRectFromAnchor(sx, sy, p.x, p.y, aspectRatio)
-            : {
-              x: Math.min(sx, p.x),
-              y: Math.min(sy, p.y),
-              w: Math.abs(p.x - sx),
-              h: Math.abs(p.y - sy)
-            };
-          state.cropRect = clampCropRectToCanvas(nextRect);
-        }
-        renderCanvas();
-        updateActionAvailability();
-        syncCropActionButtons();
-        if (dom.applyCropBtn && state.cropRect) {
-          const r = normalizeCropRect(state.cropRect);
-          dom.applyCropBtn.disabled = !(r && r.w > 0 && r.h > 0);
-        }
-        return;
-      } else if (state.tool === 'pen' || state.tool === 'highlighter') {
-        drawStroke(img, state.lastPoint, p, state.tool);
-      } else if (state.tool === 'blur') {
-        const radius = parseInt(dom.brushSize.value, 10) / 2;
-        const opacityValue = parseInt(dom.blurStrength.value, 10);
-        const strength = clamp(Math.round((Number.isFinite(opacityValue) ? opacityValue : 35) / 10), 1, 12);
-        blurBrushStroke(img, state.lastPoint, p, radius, strength);
-      }
-
-      state.lastPoint = p;
-      markImageModified(img);
-      renderCanvas();
-      requestThumbnailsRender(false);
+      getCanvasInteractionController().onPointerMove(e);
     }
 
     function onPointerUp(e) {
-      if (!state.drawing) return;
-      state.drawing = false;
-
-      if (state.textDrag) {
-        endTextBlockDrag();
-        state.lastPoint = null;
-        state.cropStart = null;
-        dom.canvas.releasePointerCapture(e.pointerId);
-        return;
-      }
-
-      if (state.tool === 'crop') {
-        state.cropInteraction = null;
-        state.cropRect = clampCropRectToCanvas(state.cropRect);
-        renderCanvas();
-        updateActionAvailability();
-        syncCropActionButtons();
-        updateCropCursor(getCanvasCoords(e));
-      } else {
-        updateUndoRedoState();
-        updateExportSizeEstimate();
-      }
-
-      state.lastPoint = null;
-      state.cropStart = null;
-      dom.canvas.releasePointerCapture(e.pointerId);
+      getCanvasInteractionController().onPointerUp(e);
     }
 
     function onCanvasWheelZoom(event) {
-      if (!activeImage()) return;
-      event.preventDefault();
-      const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
-      setCanvasZoom(state.viewport.zoom * factor, event.clientX, event.clientY);
+      getCanvasInteractionController().onCanvasWheelZoom(event);
     }
 
     function onCanvasTouchStart(event) {
-      if (!activeImage() || event.touches.length !== 2) return;
-      const view = state.viewport;
-      view.pinchActive = true;
-      view.pinchStartDistance = distanceBetweenTouches(event.touches[0], event.touches[1]);
-      view.pinchStartZoom = view.zoom;
-      event.preventDefault();
+      getCanvasInteractionController().onCanvasTouchStart(event);
     }
 
     function onCanvasTouchMove(event) {
-      if (!activeImage()) return;
-      const view = state.viewport;
-      if (!view.pinchActive || event.touches.length !== 2) return;
-      const currentDistance = distanceBetweenTouches(event.touches[0], event.touches[1]);
-      if (!Number.isFinite(currentDistance) || currentDistance <= 0) return;
-      const scale = currentDistance / Math.max(1, view.pinchStartDistance);
-      const centerX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
-      const centerY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
-      setCanvasZoom(view.pinchStartZoom * scale, centerX, centerY);
-      event.preventDefault();
+      getCanvasInteractionController().onCanvasTouchMove(event);
     }
 
     function onCanvasTouchEnd(event) {
-      const view = state.viewport;
-      if (event.touches.length < 2) {
-        view.pinchActive = false;
+      getCanvasInteractionController().onCanvasTouchEnd(event);
+    }
+
+    function getKeyboardController() {
+      if (!keyboardController) {
+        keyboardController = createKeyboardController({
+          state,
+          dom,
+          isTypingTarget,
+          getFocusableIn,
+          updateCanvasCursor,
+          openExportSheet,
+          undo,
+          redo,
+          setTool,
+          closeImportSheet,
+          closeExportSheet,
+          closeSettingsSheet,
+          closeHelpSheet,
+          closeReportIssueSheet,
+          closeCameraSheet,
+          closeLiveCaptureModal,
+          setComparePreviewActive,
+          endCanvasPan
+        });
       }
+      return keyboardController;
+    }
+
+    function onDocumentKeyDown(event) {
+      getKeyboardController().onDocumentKeyDown(event);
+    }
+
+    function onDocumentKeyUp(event) {
+      getKeyboardController().onDocumentKeyUp(event);
+    }
+
+    function onWindowBlur() {
+      getKeyboardController().onWindowBlur();
     }
 
     function bindEvents() {
@@ -3784,6 +5057,24 @@
       dom.contactDeveloperBtn.addEventListener('click', () => {
         window.location.href = '../../#contact';
       });
+      if (dom.workflowImportBtn) {
+        dom.workflowImportBtn.addEventListener('click', openImportSheet);
+      }
+      if (dom.workflowEditBtn) {
+        dom.workflowEditBtn.addEventListener('click', () => {
+          openControlSection('adjustmentsSection');
+        });
+      }
+      if (dom.workflowTextBtn) {
+        dom.workflowTextBtn.addEventListener('click', () => {
+          openControlSection('textSection', { ensureAdvanced: true });
+        });
+      }
+      if (dom.workflowExportBtn) {
+        dom.workflowExportBtn.addEventListener('click', () => {
+          void openExportSheet();
+        });
+      }
       if (dom.addMediaBtn) {
         dom.addMediaBtn.addEventListener('click', openImportSheet);
       }
@@ -3834,6 +5125,9 @@
       if (dom.openHelpSheetBtn) {
         dom.openHelpSheetBtn.addEventListener('click', openHelpSheet);
       }
+      if (dom.reportIssueBtn) {
+        dom.reportIssueBtn.addEventListener('click', openReportIssueSheet);
+      }
       if (dom.closeHelpSheetBtn) {
         dom.closeHelpSheetBtn.addEventListener('click', closeHelpSheet);
       }
@@ -3843,6 +5137,38 @@
       if (dom.helpSheet) {
         dom.helpSheet.addEventListener('click', (event) => {
           if (event.target === dom.helpSheet) closeHelpSheet();
+        });
+      }
+      if (dom.closeReportIssueBtn) {
+        dom.closeReportIssueBtn.addEventListener('click', closeReportIssueSheet);
+      }
+      if (dom.cancelReportIssueBtn) {
+        dom.cancelReportIssueBtn.addEventListener('click', closeReportIssueSheet);
+      }
+      if (dom.copyReportIssueBtn) {
+        dom.copyReportIssueBtn.addEventListener('click', async () => {
+          if (!dom.reportIssueText) return;
+          try {
+            await navigator.clipboard.writeText(dom.reportIssueText.value);
+            showToast('Report snapshot copied.', 'success');
+          } catch (error) {
+            showToast('Copy failed. Please select and copy manually.', 'error');
+          }
+        });
+      }
+      if (dom.downloadReportIssueBtn) {
+        dom.downloadReportIssueBtn.addEventListener('click', () => {
+          if (!dom.reportIssueText || !dom.reportIssueText.value.trim()) {
+            showToast('No snapshot available to download.', 'info');
+            return;
+          }
+          downloadTextFile(dom.reportIssueText.value, buildReportIssueFilename());
+          showToast('Snapshot JSON downloaded.', 'success');
+        });
+      }
+      if (dom.reportIssueSheet) {
+        dom.reportIssueSheet.addEventListener('click', (event) => {
+          if (event.target === dom.reportIssueSheet) closeReportIssueSheet();
         });
       }
       dom.exportModeSingleBtn.addEventListener('click', () => applyExportMode('single'));
@@ -3870,6 +5196,27 @@
           updateExportSummary();
         });
       }
+      if (dom.bulkUseTemplateInput) {
+        dom.bulkUseTemplateInput.addEventListener('change', () => {
+          applyBulkNameTemplateEnabled(dom.bulkUseTemplateInput.checked);
+        });
+      }
+      if (dom.bulkNameTemplateInput) {
+        dom.bulkNameTemplateInput.addEventListener('input', () => {
+          applyBulkNameTemplateValue(dom.bulkNameTemplateInput.value);
+        });
+        dom.bulkNameTemplateInput.addEventListener('change', () => {
+          applyBulkNameTemplateValue(dom.bulkNameTemplateInput.value);
+        });
+      }
+      if (dom.bulkNameSuffixInput) {
+        dom.bulkNameSuffixInput.addEventListener('input', () => {
+          applyBulkNameSuffixValue(dom.bulkNameSuffixInput.value);
+        });
+        dom.bulkNameSuffixInput.addEventListener('change', () => {
+          applyBulkNameSuffixValue(dom.bulkNameSuffixInput.value);
+        });
+      }
       if (dom.bulkFilesPanel) {
         dom.bulkFilesPanel.addEventListener('input', (event) => {
           const target = event.target;
@@ -3887,6 +5234,7 @@
                 dom.renameInput.value = img.name;
               }
               updateExportSummary();
+              scheduleSessionAutosave();
             }
           }
         });
@@ -3907,6 +5255,7 @@
               }
               requestThumbnailsRender(true);
               updateExportSummary();
+              scheduleSessionAutosave();
             }
             return;
           }
@@ -3949,48 +5298,9 @@
       }
       dom.cameraPhotoInput.addEventListener('change', (event) => handleCameraCapture(event, 'photo'));
       dom.cameraScanInput.addEventListener('change', (event) => handleCameraCapture(event, 'scan'));
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Tab' && state.activeModal) {
-          const focusable = getFocusableIn(state.activeModal);
-          if (focusable.length === 0) return;
-          const first = focusable[0];
-          const last = focusable[focusable.length - 1];
-          const current = document.activeElement;
-          if (!event.shiftKey && current === last) {
-            event.preventDefault();
-            first.focus();
-            return;
-          }
-          if (event.shiftKey && current === first) {
-            event.preventDefault();
-            last.focus();
-            return;
-          }
-        }
-        if (event.key === 'Escape' && dom.importSheet.classList.contains('active')) {
-          closeImportSheet();
-          return;
-        }
-        if (event.key === 'Escape' && dom.exportSheet.classList.contains('active')) {
-          closeExportSheet();
-          return;
-        }
-        if (event.key === 'Escape' && dom.settingsSheet.classList.contains('active')) {
-          closeSettingsSheet();
-          return;
-        }
-        if (event.key === 'Escape' && dom.helpSheet.classList.contains('active')) {
-          closeHelpSheet();
-          return;
-        }
-        if (event.key === 'Escape' && dom.cameraSheet.classList.contains('active')) {
-          closeCameraSheet();
-          return;
-        }
-        if (event.key === 'Escape' && dom.liveCaptureModal.classList.contains('active')) {
-          closeLiveCaptureModal();
-        }
-      });
+      document.addEventListener('keydown', onDocumentKeyDown);
+      document.addEventListener('keyup', onDocumentKeyUp);
+      window.addEventListener('blur', onWindowBlur);
 
       dom.themeLightBtn.addEventListener('click', () => applyTheme('light'));
       dom.themeDarkBtn.addEventListener('click', () => applyTheme('dark'));
@@ -4062,12 +5372,115 @@
       }
 
       dom.applyResizeBtn.addEventListener('click', applyResize);
+      if (dom.applyResizeAllBtn) {
+        dom.applyResizeAllBtn.addEventListener('click', applyResizeToAll);
+      }
       dom.applyAdjustBtn.addEventListener('click', applyAdjustments);
+      if (dom.applyAdjustAllBtn) {
+        dom.applyAdjustAllBtn.addEventListener('click', applyAdjustmentsToAll);
+      }
+      if (dom.updateAdjustStepBtn) {
+        dom.updateAdjustStepBtn.addEventListener('click', updateSelectedAdjustmentStep);
+      }
+      if (dom.removeAdjustStepBtn) {
+        dom.removeAdjustStepBtn.addEventListener('click', removeSelectedAdjustmentStep);
+      }
+      if (dom.clearAdjustStackBtn) {
+        dom.clearAdjustStackBtn.addEventListener('click', clearAdjustmentStepsForActiveImage);
+      }
       if (dom.applyCropBtn) {
         dom.applyCropBtn.addEventListener('click', applyCropFromRect);
       }
       if (dom.cancelCropBtn) {
         dom.cancelCropBtn.addEventListener('click', cancelCropSelection);
+      }
+      if (dom.applyCropPresetBtn) {
+        dom.applyCropPresetBtn.addEventListener('click', applyCropPreset);
+      }
+      if (dom.applySocialPresetBtn) {
+        dom.applySocialPresetBtn.addEventListener('click', applySocialPreset);
+      }
+      if (dom.textConfidenceInput) {
+        dom.textConfidenceInput.addEventListener('input', () => {
+          state.textConfidenceThreshold = clamp(parseInt(dom.textConfidenceInput.value, 10) || 0, 0, 95);
+          if (dom.textConfidenceVal) {
+            dom.textConfidenceVal.textContent = String(state.textConfidenceThreshold);
+          }
+        });
+        dom.textConfidenceInput.addEventListener('change', () => {
+          state.textConfidenceThreshold = clamp(parseInt(dom.textConfidenceInput.value, 10) || 0, 0, 95);
+          localStorage.setItem('liteedit_text_confidence_threshold', String(state.textConfidenceThreshold));
+          applyConfidenceThresholdToCurrentDetections();
+          syncTextEditPanel();
+          scheduleSessionAutosave();
+        });
+      }
+      if (dom.textStrictnessInput) {
+        dom.textStrictnessInput.addEventListener('change', () => {
+          state.textStrictness = normalizeTextStrictness(dom.textStrictnessInput.value);
+          dom.textStrictnessInput.value = state.textStrictness;
+          localStorage.setItem('liteedit_text_strictness', state.textStrictness);
+          setStatus(`Text style matching: ${state.textStrictness}`);
+          scheduleSessionAutosave();
+        });
+      }
+      if (dom.textSizeScaleInput) {
+        dom.textSizeScaleInput.addEventListener('input', () => {
+          state.textReplaceSizeScale = clamp(parseInt(dom.textSizeScaleInput.value, 10) || 110, 70, 170);
+          if (dom.textSizeScaleVal) {
+            dom.textSizeScaleVal.textContent = String(state.textReplaceSizeScale);
+          }
+        });
+        dom.textSizeScaleInput.addEventListener('change', () => {
+          state.textReplaceSizeScale = clamp(parseInt(dom.textSizeScaleInput.value, 10) || 110, 70, 170);
+          localStorage.setItem('liteedit_text_replace_scale', String(state.textReplaceSizeScale));
+          setStatus(`Replacement size set to ${state.textReplaceSizeScale}%`);
+        });
+      }
+      if (dom.textBoxXInput) {
+        dom.textBoxXInput.addEventListener('change', () => {
+          applySelectedTextBoxPosition();
+        });
+      }
+      if (dom.textBoxYInput) {
+        dom.textBoxYInput.addEventListener('change', () => {
+          applySelectedTextBoxPosition();
+        });
+      }
+      if (dom.applyTextBoxPositionBtn) {
+        dom.applyTextBoxPositionBtn.addEventListener('click', () => {
+          applySelectedTextBoxPosition();
+        });
+      }
+      if (dom.centerTextBoxBtn) {
+        dom.centerTextBoxBtn.addEventListener('click', () => {
+          applySelectedTextBoxPosition({ center: true });
+        });
+      }
+      if (dom.addTextBgOpacityInput) {
+        dom.addTextBgOpacityInput.addEventListener('input', () => {
+          if (dom.addTextBgOpacityVal) {
+            const value = clamp(parseInt(dom.addTextBgOpacityInput.value || '78', 10) || 78, 15, 100);
+            dom.addTextBgOpacityVal.textContent = String(value);
+          }
+        });
+      }
+      if (dom.startAddTextBtn) {
+        dom.startAddTextBtn.addEventListener('click', () => {
+          if (!activeImage()) {
+            showToast('Select an image first.', 'error');
+            return;
+          }
+          applyUserMode('advanced');
+          setTextAddPlacementActive(true);
+          setStatus('Tap on image to place text');
+        });
+      }
+      if (dom.cancelAddTextBtn) {
+        dom.cancelAddTextBtn.addEventListener('click', () => {
+          setTextAddPlacementActive(false);
+          setStatus('Text placement cancelled');
+        });
       }
       if (dom.highlighterColorInput) {
         dom.highlighterColorInput.addEventListener('change', () => {
@@ -4079,10 +5492,17 @@
           setStatus('Drawing color updated');
         });
       }
+      if (dom.ocrLanguageInput) {
+        dom.ocrLanguageInput.addEventListener('change', () => {
+          state.ocrLanguage = normalizeOcrLanguage(dom.ocrLanguageInput.value);
+          dom.ocrLanguageInput.value = state.ocrLanguage;
+          localStorage.setItem('liteedit_ocr_language', state.ocrLanguage);
+          setStatus(`Text detection language: ${state.ocrLanguage === 'eng+hin' ? 'English + Hindi' : 'English'}`);
+        });
+      }
       if (dom.cropRatioInput) {
         dom.cropRatioInput.addEventListener('change', () => {
-          state.cropRatio = dom.cropRatioInput.value || 'free';
-          localStorage.setItem('liteedit_crop_ratio', state.cropRatio);
+          setCropRatioValue(dom.cropRatioInput.value || 'free');
           if (state.tool === 'crop' && state.cropRect) {
             renderCanvas();
           }
@@ -4122,14 +5542,38 @@
 
       dom.downloadBtn.addEventListener('click', downloadCurrent);
       dom.downloadAllBtn.addEventListener('click', downloadAllExports);
+      if (dom.cancelExportQueueBtn) {
+        dom.cancelExportQueueBtn.addEventListener('click', () => {
+          if (!exportQueue || !exportQueue.active) {
+            setStatus('No export in progress');
+            return;
+          }
+          exportQueue.cancelled = true;
+          setStatus('Export cancellation requested');
+          showToast('Stopping export after current file.', 'info');
+        });
+      }
+      if (dom.exportPresetInput) {
+        dom.exportPresetInput.addEventListener('change', () => {
+          applyExportPreset(dom.exportPresetInput.value, { silent: false, persist: true });
+        });
+      }
       dom.formatInput.addEventListener('change', () => {
+        markExportPresetCustom();
         updateBulkPdfModeVisibility();
         if (shouldRenderBulkPanelNow()) {
           renderBulkFilesPanel();
         }
         updateExportSizeEstimate();
       });
-      dom.qualityInput.addEventListener('input', updateExportSizeEstimate);
+      dom.qualityInput.addEventListener('input', () => {
+        markExportPresetCustom();
+        updateExportSizeEstimate();
+      });
+      dom.stripMetaInput.addEventListener('change', () => {
+        markExportPresetCustom();
+        updateExportSizeEstimate();
+      });
       dom.renameInput.addEventListener('input', () => applyRename({ silent: true }));
       dom.renameInput.addEventListener('change', () => applyRename());
       if (dom.textQuickInput) {
@@ -4203,6 +5647,60 @@
       dom.canvas.addEventListener('pointermove', onPointerMove);
       dom.canvas.addEventListener('pointerup', onPointerUp);
       dom.canvas.addEventListener('pointercancel', onPointerUp);
+      if (dom.compareHoldBtn) {
+        const endComparePreview = (event = null) => {
+          if (
+            event
+            && Number.isFinite(event.pointerId)
+            && typeof dom.compareHoldBtn.hasPointerCapture === 'function'
+            && dom.compareHoldBtn.hasPointerCapture(event.pointerId)
+          ) {
+            try {
+              dom.compareHoldBtn.releasePointerCapture(event.pointerId);
+            } catch (error) {}
+          }
+          setComparePreviewActive(false);
+        };
+
+        dom.compareHoldBtn.addEventListener('pointerdown', (event) => {
+          if (dom.compareHoldBtn.disabled) return;
+          if (event.pointerType !== 'touch' && event.button !== 0) return;
+          setComparePreviewActive(true);
+          if (Number.isFinite(event.pointerId)) {
+            try {
+              dom.compareHoldBtn.setPointerCapture(event.pointerId);
+            } catch (error) {}
+          }
+          event.preventDefault();
+        });
+        dom.compareHoldBtn.addEventListener('pointerup', endComparePreview);
+        dom.compareHoldBtn.addEventListener('pointercancel', endComparePreview);
+        dom.compareHoldBtn.addEventListener('lostpointercapture', endComparePreview);
+        dom.compareHoldBtn.addEventListener('keydown', (event) => {
+          if (event.key !== ' ' && event.key !== 'Enter') return;
+          if (dom.compareHoldBtn.disabled) return;
+          setComparePreviewActive(true);
+          event.stopPropagation();
+          event.preventDefault();
+        });
+        dom.compareHoldBtn.addEventListener('keyup', (event) => {
+          if (event.key !== ' ' && event.key !== 'Enter') return;
+          setComparePreviewActive(false);
+          event.stopPropagation();
+          event.preventDefault();
+        });
+        dom.compareHoldBtn.addEventListener('blur', () => setComparePreviewActive(false));
+      }
+      if (dom.toggleSplitCompareBtn) {
+        dom.toggleSplitCompareBtn.addEventListener('click', () => {
+          setSplitCompareActive(!state.splitCompareActive);
+        });
+      }
+      if (dom.compareSplitSlider) {
+        dom.compareSplitSlider.addEventListener('input', () => {
+          setSplitComparePosition(dom.compareSplitSlider.value);
+        });
+      }
       if (dom.zoomInBtn) {
         dom.zoomInBtn.addEventListener('click', () => stepCanvasZoom(1));
       }
@@ -4243,6 +5741,28 @@
       applyTheme(state.theme);
       applyImportSettings();
       applyResizeSettings();
+      state.exportPreset = normalizeExportPreset(state.exportPreset);
+      if (state.exportPreset === 'custom') {
+        const savedFormat = localStorage.getItem('liteedit_export_format');
+        const savedQuality = parseInt(localStorage.getItem('liteedit_export_quality') || '', 10);
+        const savedStripMeta = localStorage.getItem('liteedit_export_strip_meta');
+        if (dom.formatInput && savedFormat && Array.from(dom.formatInput.options || []).some((option) => option.value === savedFormat)) {
+          dom.formatInput.value = savedFormat;
+        }
+        if (dom.qualityInput && Number.isFinite(savedQuality)) {
+          dom.qualityInput.value = String(clamp(savedQuality, 40, 100));
+        }
+        if (dom.stripMetaInput && (savedStripMeta === 'true' || savedStripMeta === 'false')) {
+          dom.stripMetaInput.checked = savedStripMeta === 'true';
+        }
+      }
+      applyExportPreset(state.exportPreset, { silent: true, persist: false });
+      localStorage.setItem('liteedit_export_preset', state.exportPreset);
+      state.ocrLanguage = normalizeOcrLanguage(state.ocrLanguage);
+      if (dom.ocrLanguageInput) {
+        dom.ocrLanguageInput.value = state.ocrLanguage;
+      }
+      localStorage.setItem('liteedit_ocr_language', state.ocrLanguage);
       if (dom.highlighterColorInput) {
         const options = Array.from(dom.highlighterColorInput.options || []);
         const supportsPen = options.some((option) => option.value === state.penColor);
@@ -4265,7 +5785,29 @@
         }
         dom.cropRatioInput.value = state.cropRatio;
       }
-      applyUserMode(state.userMode);
+      if (dom.textConfidenceInput) {
+        dom.textConfidenceInput.value = String(clamp(state.textConfidenceThreshold, 0, 95));
+      }
+      if (dom.textConfidenceVal) {
+        dom.textConfidenceVal.textContent = String(clamp(state.textConfidenceThreshold, 0, 95));
+      }
+      if (dom.textStrictnessInput) {
+        state.textStrictness = normalizeTextStrictness(state.textStrictness);
+        dom.textStrictnessInput.value = state.textStrictness;
+      }
+      state.textReplaceSizeScale = clamp(state.textReplaceSizeScale, 70, 170);
+      localStorage.setItem('liteedit_text_replace_scale', String(state.textReplaceSizeScale));
+      if (dom.textSizeScaleInput) {
+        dom.textSizeScaleInput.value = String(state.textReplaceSizeScale);
+      }
+      if (dom.textSizeScaleVal) {
+        dom.textSizeScaleVal.textContent = String(state.textReplaceSizeScale);
+      }
+      if (dom.addTextBgOpacityInput && dom.addTextBgOpacityVal) {
+        const opacityValue = clamp(parseInt(dom.addTextBgOpacityInput.value || '78', 10) || 78, 15, 100);
+        dom.addTextBgOpacityInput.value = String(opacityValue);
+        dom.addTextBgOpacityVal.textContent = String(opacityValue);
+      }
       applyExportMode(state.exportMode);
       applyBulkPdfMode(state.bulkPdfMode);
       applyBulkExportMode(state.bulkExportMode);
@@ -4275,7 +5817,11 @@
       applyThumbsVisibility(state.thumbsVisible);
       applyControlsVisibility(state.controlsVisible);
       applyToolsVisibility(state.toolsVisible);
+      initializeControlSections();
+      applyUserMode(state.userMode);
       bindEvents();
+      setSplitComparePosition(state.splitComparePosition);
+      setSplitCompareActive(state.splitCompareActive);
       setTool(state.tool);
       requestThumbnailsRender(true);
       renderCanvas();
@@ -4286,7 +5832,11 @@
       syncTextEditPanel();
       setStatus('Ready. Upload images to start.');
       scheduleLazyWarmups();
-      void tryAutoImportClipboardOnStart();
+      void attemptSessionRestore().then((restored) => {
+        if (!restored) {
+          void tryAutoImportClipboardOnStart();
+        }
+      });
     }
 
     init();

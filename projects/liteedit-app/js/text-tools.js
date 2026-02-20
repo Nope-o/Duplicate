@@ -1,6 +1,45 @@
 let cachedTextDetector = null;
 let cachedOcrEngine = null;
 let cachedOcrEnginePromise = null;
+const MAX_TEXT_DETECT_EDGE = 1600;
+
+function createDetectionCanvas(sourceCanvas, maxEdge = MAX_TEXT_DETECT_EDGE) {
+  if (!sourceCanvas) return { canvas: sourceCanvas, scale: 1 };
+  const width = sourceCanvas.width || 0;
+  const height = sourceCanvas.height || 0;
+  if (!maxEdge || width <= maxEdge && height <= maxEdge) {
+    return { canvas: sourceCanvas, scale: 1 };
+  }
+
+  const scale = maxEdge / Math.max(1, Math.max(width, height));
+  const targetWidth = Math.max(1, Math.round(width * scale));
+  const targetHeight = Math.max(1, Math.round(height * scale));
+  const detectionCanvas = typeof OffscreenCanvas === 'function'
+    ? new OffscreenCanvas(targetWidth, targetHeight)
+    : document.createElement('canvas');
+  detectionCanvas.width = targetWidth;
+  detectionCanvas.height = targetHeight;
+  const ctx = detectionCanvas.getContext('2d');
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+  }
+  return { canvas: detectionCanvas, scale };
+}
+
+function scaleTextRect(rect, scale, canvas) {
+  if (!rect) return null;
+  if (!Number.isFinite(scale) || scale === 1) {
+    return clampTextRect(rect, canvas);
+  }
+  return clampTextRect({
+    x: rect.x / scale,
+    y: rect.y / scale,
+    w: rect.w / scale,
+    h: rect.h / scale
+  }, canvas);
+}
 
 function clampTextRect(rect, canvas) {
   const x = Math.max(0, Math.floor(rect.x));
@@ -560,15 +599,20 @@ function normalizeOcrResult(result, canvas, granularity = 'word') {
       if (bounded.w < 8 || bounded.h < 8) return [];
       const text = String(item?.text || '').replace(/\s+/g, ' ').trim();
       if (!text) return [];
+      const confidence = Number.isFinite(item?.confidence) ? item.confidence : undefined;
       if (granularity === 'word') {
-        return splitRectIntoWordBoxes(bounded, text);
+        return splitRectIntoWordBoxes(bounded, text).map((entry) => ({
+          ...entry,
+          confidence
+        }));
       }
       return [{
         x: bounded.x,
         y: bounded.y,
         w: bounded.w,
         h: bounded.h,
-        text
+        text,
+        confidence
       }];
     });
   return dedupeDetections(normalized);
@@ -576,19 +620,48 @@ function normalizeOcrResult(result, canvas, granularity = 'word') {
 
 export async function detectTextBlocks(canvas, options = {}) {
   const granularity = options.granularity === 'line' ? 'line' : 'word';
-  if (isTextDetectorSupported()) {
+  const requestedLanguage = options.language === 'eng+hin' ? 'eng+hin' : 'eng';
+  const maxEdge = Number.isFinite(options.maxEdge) ? options.maxEdge : MAX_TEXT_DETECT_EDGE;
+  const { canvas: detectionCanvas, scale } = createDetectionCanvas(canvas, maxEdge);
+
+  if (isTextDetectorSupported() && requestedLanguage === 'eng') {
     if (!cachedTextDetector) {
       cachedTextDetector = new window.TextDetector();
     }
-    const rawResults = await cachedTextDetector.detect(canvas);
+    const rawResults = await cachedTextDetector.detect(detectionCanvas);
     const normalized = rawResults
-      .flatMap((result) => normalizeTextDetectionResult(result, canvas, granularity));
+      .flatMap((result) => normalizeTextDetectionResult(result, detectionCanvas, granularity))
+      .map((entry) => ({
+        ...entry,
+        ...scaleTextRect(entry, scale, canvas)
+      }))
+      .filter((entry) => entry.w >= 8 && entry.h >= 8);
     return dedupeDetections(normalized);
   }
 
   const ocrEngine = await ensureOcrEngineLoaded();
-  const ocrResult = await ocrEngine.recognize(canvas, 'eng');
-  return normalizeOcrResult(ocrResult, canvas, granularity);
+  try {
+    const ocrResult = await ocrEngine.recognize(detectionCanvas, requestedLanguage);
+    const normalized = normalizeOcrResult(ocrResult, detectionCanvas, granularity)
+      .map((entry) => ({
+        ...entry,
+        ...scaleTextRect(entry, scale, canvas)
+      }))
+      .filter((entry) => entry.w >= 8 && entry.h >= 8);
+    return dedupeDetections(normalized);
+  } catch (error) {
+    if (requestedLanguage === 'eng') {
+      throw error;
+    }
+    const fallbackResult = await ocrEngine.recognize(detectionCanvas, 'eng');
+    const normalized = normalizeOcrResult(fallbackResult, detectionCanvas, granularity)
+      .map((entry) => ({
+        ...entry,
+        ...scaleTextRect(entry, scale, canvas)
+      }))
+      .filter((entry) => entry.w >= 8 && entry.h >= 8);
+    return dedupeDetections(normalized);
+  }
 }
 
 export function drawTextDetections(ctx, detections, selectedIndex) {
@@ -617,7 +690,8 @@ export function applySmartTextReplace({
   fontFamily,
   autoFit,
   lockSourceSize = false,
-  expandWidthToFit = false
+  expandWidthToFit = false,
+  sizeScale = 1
 }) {
   if (!canvas || !selectionRect || !replacement) {
     return { applied: false, reason: 'Missing input.' };
@@ -644,12 +718,14 @@ export function applySmartTextReplace({
     || (inferredStyle && Number.isFinite(inferredStyle.fontWeight) ? inferredStyle.fontWeight : null)
     || (rect.h > 30 ? 600 : 500);
   const minFont = 8;
+  const safeScale = Number.isFinite(sizeScale) ? Math.max(0.5, Math.min(2.2, sizeScale)) : 1;
   const sourceFontSize = (sourceStyle && Number.isFinite(sourceStyle.fontSize) && sourceStyle.fontSize > 0)
     ? Math.round(sourceStyle.fontSize)
     : ((inferredStyle && Number.isFinite(inferredStyle.fontSize) && inferredStyle.fontSize > 0)
       ? Math.round(inferredStyle.fontSize)
       : Math.max(minFont, Math.round(rect.h * 0.74)));
   const stableSourceFontSize = Math.max(minFont, sourceFontSize + 1);
+  const preferredVisualFloor = Math.max(minFont, Math.round(rect.h * 0.62));
   let fontSize = stableSourceFontSize;
   const defaultPadding = Math.max(2, Math.round(rect.h * 0.12));
   const sourcePaddingLeft = Number.isFinite(sourceStyle && sourceStyle.paddingLeft)
@@ -770,6 +846,36 @@ export function applySmartTextReplace({
     }
     // Keep visual size stable; never shrink below source font size.
     fontSize = Math.max(stableSourceFontSize, fontSize);
+  }
+
+  fontSize = Math.max(stableSourceFontSize, Math.round(fontSize * safeScale));
+  fontSize = Math.max(fontSize, preferredVisualFloor);
+  ctx.font = `${fontWeight} ${fontSize}px ${resolvedFont}`;
+  if (!lockSourceSize && !doesTextFitBounds(ctx, replacement, maxTextWidth, maxTextHeight, fontSize)) {
+    const fallbackFloor = Math.max(minFont, Math.round(preferredVisualFloor * 0.9));
+    fontSize = computeFittedFontSize({
+      ctx,
+      text: replacement,
+      fontWeight,
+      fontFamily: resolvedFont,
+      minFont: fallbackFloor,
+      maxFont: fontSize,
+      maxWidth: maxTextWidth,
+      maxHeight: maxTextHeight
+    });
+    ctx.font = `${fontWeight} ${fontSize}px ${resolvedFont}`;
+    if (!doesTextFitBounds(ctx, replacement, maxTextWidth, maxTextHeight, fontSize)) {
+      fontSize = computeFittedFontSize({
+        ctx,
+        text: replacement,
+        fontWeight,
+        fontFamily: resolvedFont,
+        minFont,
+        maxFont: fontSize,
+        maxWidth: maxTextWidth,
+        maxHeight: maxTextHeight
+      });
+    }
   }
   ctx.font = `${fontWeight} ${fontSize}px ${resolvedFont}`;
 

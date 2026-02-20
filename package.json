@@ -7,9 +7,12 @@
     "build": "vite build && node scripts/smoke-test.mjs",
     "build:safe": "SAFE_BUILD=true vite build && node scripts/smoke-test.mjs",
     "preview": "vite preview --host --port 4173",
-    "build:protect": "node scripts/build-protected.mjs"
+    "build:protect": "node scripts/build-protected.mjs",
+    "test:e2e": "npx playwright test",
+    "test:e2e:smoke": "node scripts/run-e2e-safe.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "autoprefixer": "^10.4.20",
     "clean-css": "^5.3.3",
     "esbuild": "^0.25.1",

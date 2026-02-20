@@ -266,6 +266,77 @@
       gap: 6px;
     }
 
+    #bulkTemplateGroup,
+    #bulkSuffixGroup {
+      display: none;
+    }
+
+#bulkTemplateGroup.active,
+#bulkSuffixGroup.active {
+  display: grid;
+  gap: 6px;
+}
+
+.report-text {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  font: 13px/1.4 "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  background: rgba(15, 23, 42, 0.08);
+  color: inherit;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.report-include-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.report-include-title {
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.report-include-title-exclude {
+  margin-top: 2px;
+}
+
+.report-include-list {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.btn:focus-visible,
+.btn-primary:focus-visible,
+.compare-hold-btn:focus-visible,
+.compare-toggle-btn:focus-visible,
+.mini-icon-btn:focus-visible,
+.mini-hide:focus-visible,
+.mini-hide-btn:focus-visible,
+.export-mode-btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.75);
+  outline-offset: 2px;
+}
+
+.export-actions-row .btn[disabled],
+.export-actions-row .btn-primary[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
     .bulk-files-panel {
       margin-top: 10px;
       border: 1px solid var(--border);
@@ -323,13 +394,18 @@
       text-overflow: ellipsis;
     }
 
-    .bulk-file-details {
-      font-size: 0.7rem;
-      color: var(--muted);
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
+.bulk-file-details {
+  font-size: 0.7rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bulk-file-progress {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
 
     .bulk-file-config {
       display: grid;
@@ -733,6 +809,46 @@
     .tool-btn.active,
     .export-mode-btn.active {
       box-shadow: 0 8px 16px color-mix(in srgb, var(--primary) 22%, transparent);
+    }
+
+    #undoBtn,
+    #redoBtn,
+    #floatingUndoBtn,
+    #floatingRedoBtn {
+      position: relative;
+    }
+
+    #undoBtn[data-count]:not([data-count=""])::after,
+    #redoBtn[data-count]:not([data-count=""])::after,
+    #floatingUndoBtn[data-count]:not([data-count=""])::after,
+    #floatingRedoBtn[data-count]:not([data-count=""])::after {
+      content: attr(data-count);
+      position: absolute;
+      top: -7px;
+      right: -7px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--surface) 70%, transparent);
+      background: color-mix(in srgb, var(--primary) 82%, var(--primary-strong));
+      color: #fff;
+      font-size: 0.62rem;
+      font-weight: 800;
+      line-height: 14px;
+      text-align: center;
+      pointer-events: none;
+      box-shadow: 0 4px 10px color-mix(in srgb, var(--primary) 30%, transparent);
+    }
+
+    #floatingUndoBtn[data-count]:not([data-count=""])::after,
+    #floatingRedoBtn[data-count]:not([data-count=""])::after {
+      top: -6px;
+      right: -6px;
+      min-width: 14px;
+      height: 14px;
+      font-size: 0.58rem;
+      line-height: 12px;
     }
 
     .plus-btn {
