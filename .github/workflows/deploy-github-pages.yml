@@ -35,11 +35,10 @@ jobs:
         run: npm run build
         env:
           # Default GitHub Pages path is "/<repo>/".
-          # For custom-domain mode set repository variable: PAGES_USE_CUSTOM_DOMAIN=true
-          # (Portfolio keeps legacy fallback enabled by default).
-          VITE_BASE_PATH: ${{ vars.PAGES_BASE_PATH || (((vars.PAGES_USE_CUSTOM_DOMAIN == 'true') || (github.event.repository.name == 'Portfolio' && vars.PAGES_USE_CUSTOM_DOMAIN != 'false')) && '/' || format('/{0}/', github.event.repository.name)) }}
-          # Override domain with PAGES_CNAME if needed.
-          PAGES_CNAME: ${{ vars.PAGES_CNAME || (((vars.PAGES_USE_CUSTOM_DOMAIN == 'true') || (github.event.repository.name == 'Portfolio' && vars.PAGES_USE_CUSTOM_DOMAIN != 'false')) && 'madhav-kataria.com' || '') }}
+          # Use root path only when explicitly enabled for custom domain.
+          VITE_BASE_PATH: ${{ vars.PAGES_BASE_PATH || (vars.PAGES_USE_CUSTOM_DOMAIN == 'true' && '/' || format('/{0}/', github.event.repository.name)) }}
+          # Emit CNAME only when custom-domain mode is enabled (or when PAGES_CNAME is set explicitly).
+          PAGES_CNAME: ${{ vars.PAGES_CNAME || (vars.PAGES_USE_CUSTOM_DOMAIN == 'true' && 'madhav-kataria.com' || '') }}
           BUILD_VERSION: ${{ github.sha }}
           SAFE_BUILD: 'true'
 
