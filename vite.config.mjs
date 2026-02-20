@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
+import fg from 'fast-glob';
 import esbuild from 'esbuild';
 import JavaScriptObfuscator from 'javascript-obfuscator';
 import { defineConfig } from 'vite';
@@ -19,6 +20,10 @@ const GENERATED_MAIN_ENTRY_PUBLIC = '/.vite-temp/main-site-entry.generated.js';
 const ROOT_INDEX_FILE = path.resolve(ROOT, 'index.html').replace(/\\/g, '/');
 
 const SAFE_BUILD = process.env.SAFE_BUILD === 'true';
+const BUILD_VERSION = String(
+  (process.env.BUILD_VERSION || process.env.GITHUB_SHA || Date.now())
+).trim().replace(/[^a-zA-Z0-9._-]/g, '');
+const BUILD_VERSION_QUERY = `v=${encodeURIComponent(BUILD_VERSION || 'local')}`;
 const DIST_DIR = path.join(ROOT, 'dist');
 const SITE_ORIGIN = 'https://madhav-kataria.com';
 const SITEMAP_LASTMOD = process.env.SITEMAP_LASTMOD || new Date().toISOString().slice(0, 10);
@@ -29,7 +34,9 @@ const SITEMAP_ROUTES = [
   { path: '/projects/sursight-studio/', changefreq: 'monthly', priority: '0.8' },
   { path: '/projects/liteedit/', changefreq: 'monthly', priority: '0.8' },
   { path: '/projects/AutomationDashboard/', changefreq: 'monthly', priority: '0.7' },
+  { path: '/projects/mondelez-operational-dashboard/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/AttendanceTracker/', changefreq: 'monthly', priority: '0.7' },
+  { path: '/projects/nac-script/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/LLM/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/ml/', changefreq: 'monthly', priority: '0.7' }
 ];
@@ -64,6 +71,7 @@ const MAIN_SITE_SOURCE_SCRIPTS = [
 ];
 
 const OBFUSCATE_ENTRY_NAMES = new Set(['main', 'liteeditApp']);
+const ENTRY_BUNDLE_REF_PATTERN = /(assets\/[a-zA-Z0-9_-]+\.bundle\.js)(?:\?[^"']*)?/g;
 
 function escapeXml(value) {
   return String(value)
@@ -248,6 +256,26 @@ function selectiveObfuscationPlugin() {
   };
 }
 
+function cacheBustEntryBundlesPlugin() {
+  return {
+    name: 'cache-bust-entry-bundles',
+    apply: 'build',
+    async closeBundle() {
+      const htmlFiles = await fg('**/*.html', { cwd: DIST_DIR, absolute: true });
+      for (const htmlPath of htmlFiles) {
+        const html = await fs.readFile(htmlPath, 'utf8');
+        const updated = html.replace(
+          ENTRY_BUNDLE_REF_PATTERN,
+          (_fullMatch, entryPath) => `${entryPath}?${BUILD_VERSION_QUERY}`
+        );
+        if (updated !== html) {
+          await fs.writeFile(htmlPath, updated, 'utf8');
+        }
+      }
+    }
+  };
+}
+
 function copyStaticFilesPlugin() {
   return {
     name: 'copy-static-files',
@@ -274,6 +302,9 @@ function copyStaticFilesPlugin() {
       await fs.writeFile(path.join(DIST_DIR, 'sitemap.xml'), sitemapXml, 'utf8');
       const indexableUrls = buildIndexableUrlList(SITEMAP_ROUTES);
       await fs.writeFile(path.join(DIST_DIR, 'search-console-urls.txt'), indexableUrls, 'utf8');
+      if (SHOULD_COPY_CNAME && PAGES_CNAME) {
+        await fs.writeFile(path.join(DIST_DIR, 'CNAME'), `${PAGES_CNAME}\n`, 'utf8');
+      }
     }
   };
 }
@@ -306,7 +337,9 @@ export default defineConfig({
         sursightDetail: path.resolve(ROOT, 'projects/sursight-studio/index.html'),
         liteeditDetail: path.resolve(ROOT, 'projects/liteedit/index.html'),
         automationDetail: path.resolve(ROOT, 'projects/AutomationDashboard/index.html'),
+        mondelezOpsDetail: path.resolve(ROOT, 'projects/mondelez-operational-dashboard/index.html'),
         attendanceDetail: path.resolve(ROOT, 'projects/AttendanceTracker/index.html'),
+        nacDetail: path.resolve(ROOT, 'projects/nac-script/index.html'),
         llm: path.resolve(ROOT, 'projects/LLM/index.html'),
         ml: path.resolve(ROOT, 'projects/ml/index.html')
       },
@@ -320,6 +353,7 @@ export default defineConfig({
   plugins: [
     mainSiteLegacyEntryPlugin(),
     selectiveObfuscationPlugin(),
+    cacheBustEntryBundlesPlugin(),
     copyStaticFilesPlugin()
   ]
 });
