@@ -18,7 +18,10 @@ async function readIfExists(relPath) {
 }
 
 function hasModuleBundleRef(html, key) {
-  const pattern = new RegExp(`<script[^>]+type=["']module["'][^>]+src=["'][^"']*assets\\/${key}(?:\\.bundle)?(?:-[^"']+)?\\.js["']`, 'i');
+  const pattern = new RegExp(
+    `<script[^>]+type=["']module["'][^>]+src=["'][^"']*assets\\/${key}(?:\\.bundle)?(?:-[^"']+)?\\.js(?:\\?[^"']*)?["']`,
+    'i'
+  );
   return pattern.test(html);
 }
 
