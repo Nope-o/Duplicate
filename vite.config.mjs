@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
+import fg from 'fast-glob';
 import esbuild from 'esbuild';
 import JavaScriptObfuscator from 'javascript-obfuscator';
 import { defineConfig } from 'vite';
@@ -19,6 +20,10 @@ const GENERATED_MAIN_ENTRY_PUBLIC = '/.vite-temp/main-site-entry.generated.js';
 const ROOT_INDEX_FILE = path.resolve(ROOT, 'index.html').replace(/\\/g, '/');
 
 const SAFE_BUILD = process.env.SAFE_BUILD === 'true';
+const BUILD_VERSION = String(
+  (process.env.BUILD_VERSION || process.env.GITHUB_SHA || Date.now())
+).trim().replace(/[^a-zA-Z0-9._-]/g, '');
+const BUILD_VERSION_QUERY = `v=${encodeURIComponent(BUILD_VERSION || 'local')}`;
 const DIST_DIR = path.join(ROOT, 'dist');
 const SITE_ORIGIN = 'https://madhav-kataria.com';
 const SITEMAP_LASTMOD = process.env.SITEMAP_LASTMOD || new Date().toISOString().slice(0, 10);
@@ -66,6 +71,7 @@ const MAIN_SITE_SOURCE_SCRIPTS = [
 ];
 
 const OBFUSCATE_ENTRY_NAMES = new Set(['main', 'liteeditApp']);
+const ENTRY_BUNDLE_REF_PATTERN = /(assets\/[a-zA-Z0-9_-]+\.bundle\.js)(?:\?[^"']*)?/g;
 
 function escapeXml(value) {
   return String(value)
@@ -250,6 +256,26 @@ function selectiveObfuscationPlugin() {
   };
 }
 
+function cacheBustEntryBundlesPlugin() {
+  return {
+    name: 'cache-bust-entry-bundles',
+    apply: 'build',
+    async closeBundle() {
+      const htmlFiles = await fg('**/*.html', { cwd: DIST_DIR, absolute: true });
+      for (const htmlPath of htmlFiles) {
+        const html = await fs.readFile(htmlPath, 'utf8');
+        const updated = html.replace(
+          ENTRY_BUNDLE_REF_PATTERN,
+          (_fullMatch, entryPath) => `${entryPath}?${BUILD_VERSION_QUERY}`
+        );
+        if (updated !== html) {
+          await fs.writeFile(htmlPath, updated, 'utf8');
+        }
+      }
+    }
+  };
+}
+
 function copyStaticFilesPlugin() {
   return {
     name: 'copy-static-files',
@@ -322,6 +348,7 @@ export default defineConfig({
   plugins: [
     mainSiteLegacyEntryPlugin(),
     selectiveObfuscationPlugin(),
+    cacheBustEntryBundlesPlugin(),
     copyStaticFilesPlugin()
   ]
 });

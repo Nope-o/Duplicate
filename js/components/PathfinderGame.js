@@ -159,10 +159,11 @@ function PathfinderGame({ onGameWin, isDark }) {
       const directionFromKey = PATHFINDER_DIRECTION_BY_KEY[e.key] || '';
       const directionFromCode = PATHFINDER_DIRECTION_BY_CODE[e.code] || '';
       const directionFromKeyCode = PATHFINDER_DIRECTION_BY_KEYCODE[keyCode] || '';
-      let direction = directionFromKey || directionFromCode || directionFromKeyCode;
-      if (directionFromKey && directionFromCode && directionFromKey !== directionFromCode) {
-        // Prefer semantic key meaning if device/browser reports mismatched physical code.
-        direction = directionFromKey;
+      // On some Windows Chrome setups, `key` can be transformed by input tools/extensions.
+      // Arrow keyCode values stay stable, so prefer that when available.
+      let direction = directionFromKeyCode || directionFromKey || directionFromCode;
+      if (directionFromKeyCode && directionFromKey && directionFromKeyCode !== directionFromKey) {
+        direction = directionFromKeyCode;
       }
       if (!direction) return;
 

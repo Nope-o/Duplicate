@@ -40,6 +40,7 @@ jobs:
           VITE_BASE_PATH: ${{ vars.PAGES_BASE_PATH || (((vars.PAGES_USE_CUSTOM_DOMAIN == 'true') || (github.event.repository.name == 'Portfolio' && vars.PAGES_USE_CUSTOM_DOMAIN != 'false')) && '/' || format('/{0}/', github.event.repository.name)) }}
           # Override domain with PAGES_CNAME if needed.
           PAGES_CNAME: ${{ vars.PAGES_CNAME || (((vars.PAGES_USE_CUSTOM_DOMAIN == 'true') || (github.event.repository.name == 'Portfolio' && vars.PAGES_USE_CUSTOM_DOMAIN != 'false')) && 'madhav-kataria.com' || '') }}
+          BUILD_VERSION: ${{ github.sha }}
           SAFE_BUILD: 'true'
 
       - name: Setup Pages
