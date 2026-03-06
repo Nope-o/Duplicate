@@ -47,12 +47,29 @@
         <img src="../../assets/images/projects/sursight-studio/logo.webp" alt="Logo" class="app-logo">
       </a>
       <h2 class="app-title">SurSight Studio</h2>
-      <button class="settings-btn" onclick="app.toggleSettingsSidebar()" aria-label="Open settings">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M10.325 4.317a1.724 1.724 0 0 1 3.35 0 1.724 1.724 0 0 0 2.574 1.066 1.724 1.724 0 0 1 2.898 1.676 1.724 1.724 0 0 0 .839 2.532 1.724 1.724 0 0 1 0 2.818 1.724 1.724 0 0 0-.839 2.532 1.724 1.724 0 0 1-2.898 1.676 1.724 1.724 0 0 0-2.574 1.066 1.724 1.724 0 0 1-3.35 0 1.724 1.724 0 0 0-2.574-1.066 1.724 1.724 0 0 1-2.898-1.676 1.724 1.724 0 0 0-.839-2.532 1.724 1.724 0 0 1 0-2.818 1.724 1.724 0 0 0 .839-2.532 1.724 1.724 0 0 1 2.898-1.676 1.724 1.724 0 0 0 2.574-1.066Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M12 15.75A3.75 3.75 0 1 0 12 8.25a3.75 3.75 0 0 0 0 7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button
+          id="sessionHeaderIndicator"
+          class="session-header-indicator"
+          type="button"
+          onclick="sessions.openSessionsTab()"
+          aria-label="Open recorded sessions"
+          title="Open recorded sessions"
+          hidden
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 5.75A2.75 2.75 0 0 1 8.75 3h6.5A2.75 2.75 0 0 1 18 5.75v12.5A2.75 2.75 0 0 1 15.25 21h-6.5A2.75 2.75 0 0 1 6 18.25V5.75Z" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M9 8.5h6M9 12h6M9 15.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span id="sessionHeaderCount" class="session-header-count">0</span>
+        </button>
+        <button class="settings-btn" onclick="app.toggleSettingsSidebar()" aria-label="Open settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M10.325 4.317a1.724 1.724 0 0 1 3.35 0 1.724 1.724 0 0 0 2.574 1.066 1.724 1.724 0 0 1 2.898 1.676 1.724 1.724 0 0 0 .839 2.532 1.724 1.724 0 0 1 0 2.818 1.724 1.724 0 0 0-.839 2.532 1.724 1.724 0 0 1-2.898 1.676 1.724 1.724 0 0 0-2.574 1.066 1.724 1.724 0 0 1-3.35 0 1.724 1.724 0 0 0-2.574-1.066 1.724 1.724 0 0 1-2.898-1.676 1.724 1.724 0 0 0-.839-2.532 1.724 1.724 0 0 1 0-2.818 1.724 1.724 0 0 0 .839-2.532 1.724 1.724 0 0 1 2.898-1.676 1.724 1.724 0 0 0 2.574-1.066Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 15.75A3.75 3.75 0 1 0 12 8.25a3.75 3.75 0 0 0 0 7.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -154,6 +171,20 @@
             <button class="btn btn-secondary" onclick="audio.calibrateNoise()">
               Calibrate Noise Floor
             </button>
+            <label class="pill">
+              <span class="pill-label">Replay Voice</span>
+              <select id="sessionReplayVoice" aria-label="Select session replay voice">
+                <option value="violin">Violin</option>
+                <option value="clarinet">Clarinet</option>
+                <option value="flute">Flute</option>
+                <option value="clean">Clean Synth</option>
+              </select>
+            </label>
+            <label class="pill">
+              <span class="pill-label">Replay Level</span>
+              <input id="sessionReplayLevel" class="range" type="range" min="35" max="100" value="78" step="1" aria-label="Session replay level">
+              <span id="sessionReplayLevelVal" class="pill-value">78%</span>
+            </label>
             <label class="setting-item">
               <input type="checkbox" id="autoTonicDetection">
               <span>Auto-Detect Tonic (Sa)</span>
@@ -518,8 +549,9 @@
         <button class="tab" role="tab" data-tab="metronome" aria-selected="false">
           🎼 Metronome
         </button>
-        <button class="tab" role="tab" data-tab="sessions" aria-selected="false">
+        <button class="tab tab-with-badge" role="tab" data-tab="sessions" aria-selected="false">
           📝 Sessions
+          <span id="sessionsTabBadge" class="tab-count-badge" hidden>0</span>
         </button>
       </div>
 
@@ -628,6 +660,28 @@
         <div class="tab-header">
           <h3>Your Practice Sessions</h3>
           <button class="btn btn-secondary btn-sm" onclick="sessions.clearAll()">Clear All</button>
+        </div>
+        <div id="sessionPlaybackStatus" class="session-playback-status" aria-live="polite" hidden>
+          <div class="session-playback-label">▶ Session Playback Monitor</div>
+          <div class="session-playback-pitch" id="sessionPlaybackPitch">Preparing playback...</div>
+          <div class="session-playback-meta" id="sessionPlaybackMeta">Frequency, note, and Sargam will appear here during replay.</div>
+          <div class="session-playback-controls" role="group" aria-label="Session playback controls">
+            <button
+              type="button"
+              id="sessionToneToggle"
+              class="session-playback-btn is-active"
+              onclick="sessions.toggleToneReplay()"
+              aria-pressed="true"
+            >
+              Tone Replay On
+            </button>
+            <div class="session-speed-group" role="group" aria-label="Playback speed">
+              <button type="button" class="session-speed-btn" data-speed="0.5" onclick="sessions.setPlaybackSpeed(0.5)">0.5x</button>
+              <button type="button" class="session-speed-btn is-active" data-speed="1" onclick="sessions.setPlaybackSpeed(1)">1x</button>
+              <button type="button" class="session-speed-btn" data-speed="1.5" onclick="sessions.setPlaybackSpeed(1.5)">1.5x</button>
+            </div>
+          </div>
+          <div class="session-playback-note">Synth replay follows recorded pitch data. It is not the original microphone audio.</div>
         </div>
         <div id="sessionsList" class="sessions-list"></div>
       </div>
@@ -783,7 +837,7 @@
   <footer class="app-site-footer" aria-label="Application version">
     <span class="footer-brand">SurSight Studio</span>
     <span class="footer-sep">•</span>
-    <span class="footer-version">Version 2.2.1</span>
+    <span class="footer-version">Version 2.4.14</span>
     <span class="footer-note">Made with care by Madhav for your daily Riyaz.</span>
   </footer>
 

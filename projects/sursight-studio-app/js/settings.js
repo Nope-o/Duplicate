@@ -16,6 +16,8 @@ const DEFAULT_SETTINGS = {
   showFormants: false,
   autoTonicDetection: false,
   playExerciseTargetPrompt: true,
+  sessionReplayVoice: 'violin',
+  sessionReplayLevel: 78,
   mobileControlsOpen: false
 };
 
@@ -35,6 +37,8 @@ const SCHEMA = {
   showFormants: 'boolean',
   autoTonicDetection: 'boolean',
   playExerciseTargetPrompt: 'boolean',
+  sessionReplayVoice: 'string',
+  sessionReplayLevel: 'number',
   mobileControlsOpen: 'boolean'
 };
 

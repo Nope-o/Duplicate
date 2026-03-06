@@ -325,6 +325,33 @@ class UISystem {
     }
     applyFpsLimit(settings.get('fpsLimit'));
 
+    const sessionReplayVoice = document.getElementById('sessionReplayVoice');
+    const sessionReplayLevel = document.getElementById('sessionReplayLevel');
+    const sessionReplayLevelVal = document.getElementById('sessionReplayLevelVal');
+    const allowedReplayVoices = ['violin', 'clarinet', 'flute', 'clean'];
+    const applySessionReplayVoice = (value) => {
+      const voice = allowedReplayVoices.includes(value) ? value : 'violin';
+      if (sessionReplayVoice) sessionReplayVoice.value = voice;
+      settings.set('sessionReplayVoice', voice);
+      window.sessions?.setPlaybackVoice?.(voice);
+    };
+    const applySessionReplayLevel = (value) => {
+      const parsed = parseInt(value, 10);
+      const level = Math.max(35, Math.min(100, Number.isFinite(parsed) ? parsed : 78));
+      if (sessionReplayLevel) sessionReplayLevel.value = String(level);
+      if (sessionReplayLevelVal) sessionReplayLevelVal.textContent = `${level}%`;
+      settings.set('sessionReplayLevel', level);
+      window.sessions?.setPlaybackLevel?.(level);
+    };
+    if (sessionReplayVoice) {
+      sessionReplayVoice.addEventListener('change', () => applySessionReplayVoice(sessionReplayVoice.value));
+    }
+    if (sessionReplayLevel) {
+      sessionReplayLevel.addEventListener('input', () => applySessionReplayLevel(sessionReplayLevel.value));
+    }
+    applySessionReplayVoice(settings.get('sessionReplayVoice'));
+    applySessionReplayLevel(settings.get('sessionReplayLevel'));
+
     // Exercise difficulty
     const exerciseDifficulty = document.getElementById('exerciseDifficulty');
     const exerciseDifficultyInline = document.getElementById('exerciseDifficultyInline');

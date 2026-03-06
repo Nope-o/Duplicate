@@ -43,6 +43,7 @@ class RecordingSystem {
     // Save session if we have data
     if (this.recordedData.length > 0) {
       window.sessions.saveSession(this.recordedData);
+      window.sessions?.animateSessionSaved?.(recordBtn || indicator);
       this.recordedData = [];
     }
 

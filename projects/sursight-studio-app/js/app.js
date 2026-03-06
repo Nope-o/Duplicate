@@ -47,7 +47,7 @@ class PitchVisualizerApp {
       this.checkMicrophonePermission();
       this.initialized = true;
       console.log('✅ SurSight Studio initialized successfully');
-      trackAnalyticsEvent('sursight_opened', { version: '2.2.1' }, { dedupeKey: 'sursight_opened_once' });
+      trackAnalyticsEvent('sursight_opened', { version: '2.4.14' }, { dedupeKey: 'sursight_opened_once' });
       this.updateAdvancedEmptyState();
       this.checkFirstTimeUser();
     } catch (error) {

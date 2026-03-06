@@ -185,6 +185,24 @@
     height: 28px;
   }
 
+  .header-actions {
+    gap: 6px;
+  }
+
+  .session-header-indicator {
+    padding: 8px 9px;
+    gap: 5px;
+  }
+
+  .session-header-indicator svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .session-header-count {
+    font-size: 12px;
+  }
+
   /* Control bar mobile layout */
   .control-bar {
     flex-direction: column;
@@ -276,6 +294,19 @@
     white-space: nowrap;
   }
 
+  .tab-with-badge {
+    padding-right: 24px;
+  }
+
+  .tab-count-badge {
+    top: 4px;
+    right: 5px;
+    min-width: 16px;
+    height: 16px;
+    font-size: 9px;
+    padding: 0 4px;
+  }
+
   #exercisesTab .tab-header {
     align-items: flex-start;
     flex-direction: column;
@@ -297,6 +328,14 @@
 @media (max-width: 480px) {
   .app-logo {
     height: 24px;
+  }
+
+  .session-header-indicator {
+    padding: 8px;
+  }
+
+  .session-header-count {
+    font-size: 11px;
   }
 
   .action-buttons .btn {
