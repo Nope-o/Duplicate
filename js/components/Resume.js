@@ -28,8 +28,8 @@ function Resume({ isDark }) {
 
       <div id="resume-content" className={`card-float-in mb-6 rounded-xl p-6 shadow-md ${isDark ? 'resume-content-dark' : 'bg-gradient-to-br from-slate-100 via-gray-50 to-white'}`}>
         <div className="resume-professional-heading text-lg font-semibold text-gray-800 mb-2">Professional Summary</div>
-        <p className="text-gray-700 mb-2">Currently pursuing a Bachelor’s in <strong className="resume-summary-accent">Data Science and Artificial Intelligence from IIT Guwahati</strong>, , with a solid foundation in analytics, machine learning, and practical industry exposure. Possess <strong className="resume-summary-accent">3+ years</strong> of experience at <strong className="resume-summary-accent">HCL Technologies</strong>, including work as a supplier to <strong className="resume-summary-accent">Ericsson Global</strong>, delivering end-to-end solutions in RPA using <strong className="resume-summary-accent">Microsoft Power Automate</strong>, custom business applications via <strong className="resume-summary-accent">Power Apps</strong>, and enterprise-grade dashboards and reports with <strong className="resume-summary-accent">Power BI</strong>.</p>
-        <p className="text-gray-700 mb-2">Skilled in analyzing complex organizational data within IT Infrastructure, identifying patterns, optimizing processes, and monitoring SLA and KPI performance to drive operational excellence.</p>
+        <p className="text-gray-700 mb-2">Currently pursuing a <strong className="resume-summary-accent">Bachelor&apos;s in Data Science and Artificial Intelligence from IIT Guwahati</strong>, with a strong foundation in <strong className="resume-summary-accent">data analytics, machine learning, and applied problem-solving</strong>. Possess <strong className="resume-summary-accent">3+ years of professional experience at HCL Technologies</strong>, working as a <strong className="resume-summary-accent">Consultant for multiple global clients</strong>, delivering end-to-end automation and analytics solutions. Experienced in developing RPA solutions using <strong className="resume-summary-accent">Microsoft Power Automate</strong>, building custom business applications with <strong className="resume-summary-accent">Power Apps</strong>, and creating enterprise dashboards and analytical reports using <strong className="resume-summary-accent">Power BI</strong>.</p>
+        <p className="text-gray-700 mb-2">Skilled in analyzing complex <strong className="resume-summary-accent">IT infrastructure and organizational data</strong>, identifying patterns, optimizing operational processes, and monitoring <strong className="resume-summary-accent">SLA and KPI performance</strong> to support data-driven decision-making and improve operational efficiency.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
           <div>
             <h3 className={`resume-highlight-heading font-bold text-lg mb-2 ${isDark ? '' : 'text-blue-900'}`}>Core Expertise</h3>
@@ -109,5 +109,4 @@ function Resume({ isDark }) {
     </section>
   );
 }
-
 

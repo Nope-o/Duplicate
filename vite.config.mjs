@@ -36,6 +36,9 @@ const SITEMAP_ROUTES = [
   { path: '/projects/AutomationDashboard/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/mondelez-operational-dashboard/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/AttendanceTracker/', changefreq: 'monthly', priority: '0.7' },
+  { path: '/projects/kba-review/', changefreq: 'monthly', priority: '0.7' },
+  { path: '/projects/ai-knowledge-portal/', changefreq: 'monthly', priority: '0.7' },
+  { path: '/projects/my-apps-dashboards/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/nac-script/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/LLM/', changefreq: 'monthly', priority: '0.7' },
   { path: '/projects/ml/', changefreq: 'monthly', priority: '0.7' }
@@ -339,6 +342,9 @@ export default defineConfig({
         automationDetail: path.resolve(ROOT, 'projects/AutomationDashboard/index.html'),
         mondelezOpsDetail: path.resolve(ROOT, 'projects/mondelez-operational-dashboard/index.html'),
         attendanceDetail: path.resolve(ROOT, 'projects/AttendanceTracker/index.html'),
+        kbaReviewDetail: path.resolve(ROOT, 'projects/kba-review/index.html'),
+        aiKnowledgePortalDetail: path.resolve(ROOT, 'projects/ai-knowledge-portal/index.html'),
+        myAppsDashboardsDetail: path.resolve(ROOT, 'projects/my-apps-dashboards/index.html'),
         nacDetail: path.resolve(ROOT, 'projects/nac-script/index.html'),
         llm: path.resolve(ROOT, 'projects/LLM/index.html'),
         ml: path.resolve(ROOT, 'projects/ml/index.html')
