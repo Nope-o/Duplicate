@@ -13,6 +13,7 @@ import {
 } from './music.js';
 
 const STORAGE_KEY = 'phononium-settings-v1';
+const GUIDE_STORAGE_KEY_PREFIX = 'phononium-guide-seen-v1';
 const DEFAULTS = {
   instrument: 'pureTone',
   waveform: 'sine',
@@ -44,6 +45,85 @@ const SCALE_LABELS = {
   pentatonic: 'Pentatonic'
 };
 
+function isMobileLikeDevice() {
+  return typeof window !== 'undefined'
+    && ((window.matchMedia?.('(pointer: coarse)')?.matches ?? false) || window.innerWidth < 720);
+}
+
+const IS_COMPACT_DEVICE = isMobileLikeDevice();
+
+function getGuideProfile() {
+  if (isMobileLikeDevice()) {
+    return {
+      key: 'mobile',
+      badge: 'Phone / Tablet Guide',
+      title: 'How Phononium works on your phone',
+      lead: 'Phone mode is built around motion first, with the stage surface kept as backup when sensors are unavailable.',
+      primaryMode: 'Move and tilt the phone',
+      primaryText: 'Press Start Sound, then raise, tilt, rotate, or glide the phone to change pitch in real time.',
+      fallbackMode: 'Use the stage when needed',
+      fallbackText: 'If motion is blocked, drag on the pitch stage to keep playing while you switch to a secure URL.',
+      steps: [
+        {
+          title: 'Start sound first',
+          text: 'Press Start Sound first. Phononium attempts to arm motion during the same tap so the browser can unlock audio and sensors together.'
+        },
+        {
+          title: 'Confirm speaker output',
+          text: 'Use Test Speaker once before performing so you know the browser audio path is active.'
+        },
+        {
+          title: 'Shape pitch with movement',
+          text: 'SkyPitch reacts to lift, Horizon Glide reacts to side motion, and Theremin Flow blends multiple axes for the richest control.'
+        }
+      ]
+    };
+  }
+
+  return {
+    key: 'desktop',
+    badge: 'Laptop / Desktop Guide',
+    title: 'How Phononium works on your laptop',
+    lead: 'Desktop mode uses the same sound engine, but replaces motion input with a controllable stage surface and keyboard fallback.',
+    primaryMode: 'Drag on the stage',
+    primaryText: 'Use the pitch stage as your primary controller. Horizontal and vertical movement shape the live note.',
+    fallbackMode: 'Use arrow keys for fine moves',
+    fallbackText: 'Arrow keys keep pitch adjustments precise when you want controlled steps instead of freehand movement.',
+    steps: [
+      {
+        title: 'Start audio first',
+        text: 'Press Start Sound or Test Speaker first so the browser unlocks audio before you begin moving around the stage.'
+      },
+      {
+        title: 'Play from the pitch stage',
+        text: 'Drag across the stage to sweep pitch and use the active control mode to decide how movement is interpreted.'
+      },
+      {
+        title: 'Tune response in Settings',
+        text: 'Use the settings sheet to change scale lock, pitch range, vibrato, and instrument character without crowding the main screen.'
+      }
+    ]
+  };
+}
+
+function getGuideStorageKey() {
+  return `${GUIDE_STORAGE_KEY_PREFIX}:${getGuideProfile().key}`;
+}
+
+function shouldAutoOpenGuide() {
+  try {
+    return localStorage.getItem(getGuideStorageKey()) !== '1';
+  } catch (error) {
+    return true;
+  }
+}
+
+function markGuideSeen() {
+  try {
+    localStorage.setItem(getGuideStorageKey(), '1');
+  } catch (error) {}
+}
+
 function loadSettings() {
   try {
     return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
@@ -64,6 +144,8 @@ const state = {
   audioOn: false,
   motionEnabled: false,
   motionSignalLive: false,
+  motionAttempted: false,
+  motionError: '',
   keyboardOffset: 0,
   pointer: { active: false, x: 0, y: 0 },
   anchorFrame: { alpha: 0, beta: 0, gamma: 0 },
@@ -74,8 +156,8 @@ const state = {
   lastRenderSignature: ''
 };
 
-const RENDER_BUDGET_MS = 1000 / 30;
-const READOUT_BUDGET_MS = 1000 / 24;
+const RENDER_BUDGET_MS = 1000 / (IS_COMPACT_DEVICE ? 22 : 30);
+const READOUT_BUDGET_MS = 1000 / (IS_COMPACT_DEVICE ? 20 : 24);
 const domCache = new Map();
 
 const dom = {
@@ -86,8 +168,30 @@ const dom = {
   heroHelper: document.getElementById('heroHelper'),
   enableMotionBtn: document.getElementById('enableMotionBtn'),
   permissionBanner: document.getElementById('permissionBanner'),
+  permissionHeadline: document.getElementById('permissionHeadline'),
   permissionStatus: document.getElementById('permissionStatus'),
-  fullscreenBtn: document.getElementById('fullscreenBtn'),
+  openGuideBtn: document.getElementById('openGuideBtn'),
+  openSettingsBtn: document.getElementById('openSettingsBtn'),
+  openSettingsBtnSecondary: document.getElementById('openSettingsBtnSecondary'),
+  settingsModal: document.getElementById('settingsModal'),
+  settingsBackdrop: document.getElementById('settingsBackdrop'),
+  settingsSheet: document.getElementById('settingsSheet'),
+  openGuideBtnSecondary: document.getElementById('openGuideBtnSecondary'),
+  closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+  guideModal: document.getElementById('guideModal'),
+  guideBackdrop: document.getElementById('guideBackdrop'),
+  guideSheet: document.getElementById('guideSheet'),
+  closeGuideBtn: document.getElementById('closeGuideBtn'),
+  guideOpenSettingsBtn: document.getElementById('guideOpenSettingsBtn'),
+  guideStartBtn: document.getElementById('guideStartBtn'),
+  guideDeviceBadge: document.getElementById('guideDeviceBadge'),
+  guideTitle: document.getElementById('guideTitle'),
+  guideLead: document.getElementById('guideLead'),
+  guidePrimaryMode: document.getElementById('guidePrimaryMode'),
+  guidePrimaryText: document.getElementById('guidePrimaryText'),
+  guideFallbackMode: document.getElementById('guideFallbackMode'),
+  guideFallbackText: document.getElementById('guideFallbackText'),
+  guideSteps: document.getElementById('guideSteps'),
   westernNote: document.getElementById('westernNote'),
   indianNote: document.getElementById('indianNote'),
   hindiNote: document.getElementById('hindiNote'),
@@ -128,6 +232,8 @@ const dom = {
 const toneEngine = new ToneEngine();
 const motionController = new MotionSensorController();
 const sonicCanvas = new SonicCanvas(dom.sonicCanvas);
+let lastFocusedElement = null;
+let runtimeFrameId = 0;
 
 function setNodeText(element, value) {
   if (!element) return;
@@ -147,39 +253,153 @@ function setHeroHelper(message) {
   setNodeText(dom.heroHelper, message);
 }
 
+function getNeutralMotionResponse() {
+  return {
+    source: 'Ready',
+    vector: { x: 0, y: 0, z: 0 },
+    brightness: 0.5,
+    vibratoCents: 0,
+    semitoneOffset: 0
+  };
+}
+
 function getControlSummary() {
   if (state.audioOn && state.motionEnabled && motionController.hasRecentSignal()) {
     return 'Performance ready';
   }
   if (state.audioOn && state.motionEnabled) {
-    return 'Tone live • awaiting motion';
+    return 'Sound live • awaiting motion';
   }
   if (state.audioOn) {
-    return 'Tone live • fallback ready';
-  }
-  if (state.motionEnabled) {
-    return 'Motion armed • tone idle';
+    return 'Sound live • fallback ready';
   }
   return 'Awaiting first gesture';
 }
 
+function startRuntime() {
+  if (runtimeFrameId) return;
+  state.lastVisualFrame = 0;
+  state.lastReadoutFrame = 0;
+  state.lastRenderSignature = '';
+  runtimeFrameId = requestAnimationFrame(tick);
+}
+
+function stopRuntime() {
+  if (runtimeFrameId) {
+    cancelAnimationFrame(runtimeFrameId);
+    runtimeFrameId = 0;
+  }
+  motionController.stop();
+  state.motionEnabled = false;
+  state.motionSignalLive = false;
+  state.keyboardOffset = 0;
+  state.pointer = { active: false, x: 0, y: 0 };
+
+  const anchorFrequency = midiToFrequency(getAnchorMidi());
+  const anchorNoteData = getNoteDataFromFrequency(anchorFrequency);
+  state.currentFrequency = anchorFrequency;
+  state.currentNoteData = anchorNoteData;
+  renderReadout(anchorNoteData, getNeutralMotionResponse());
+  sonicCanvas.render({
+    analyserData: null,
+    noteData: anchorNoteData,
+    meta: { modeLabel: CONTROL_MODES[state.mode] }
+  });
+  setStatusText();
+  updatePermissionBanner();
+}
+
 function updateActionStates() {
-  dom.audioToggleBtn.textContent = state.audioOn ? 'Stop Tone' : 'Start Tone';
+  dom.audioToggleBtn.textContent = state.audioOn ? 'Stop Sound' : 'Start Sound';
   dom.audioToggleBtn.classList.toggle('is-live', state.audioOn);
   dom.audioToggleBtn.setAttribute('aria-pressed', state.audioOn ? 'true' : 'false');
 
   dom.enableMotionBtn.textContent = !motionController.secureContext && motionController.supported
     ? 'Need HTTPS'
-    : state.motionEnabled
-      ? 'Motion Enabled'
-      : 'Enable Motion';
+    : 'Retry Motion';
   dom.enableMotionBtn.classList.toggle('is-enabled', state.motionEnabled);
   dom.enableMotionBtn.setAttribute('aria-pressed', state.motionEnabled ? 'true' : 'false');
 
   dom.anchorBtn.classList.toggle('is-ready', true);
   dom.anchorBtnHero.classList.toggle('is-ready', true);
+}
 
-  dom.fullscreenBtn.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+function syncOverlayState() {
+  const hasOpenOverlay = Boolean(
+    (dom.settingsModal && !dom.settingsModal.hidden)
+    || (dom.guideModal && !dom.guideModal.hidden)
+  );
+  document.body.classList.toggle('settings-open', hasOpenOverlay);
+}
+
+function populateGuideContent() {
+  const profile = getGuideProfile();
+  setNodeText(dom.guideDeviceBadge, profile.badge);
+  setNodeText(dom.guideTitle, profile.title);
+  setNodeText(dom.guideLead, profile.lead);
+  setNodeText(dom.guidePrimaryMode, profile.primaryMode);
+  setNodeText(dom.guidePrimaryText, profile.primaryText);
+  setNodeText(dom.guideFallbackMode, profile.fallbackMode);
+  setNodeText(dom.guideFallbackText, profile.fallbackText);
+
+  if (dom.guideSteps) {
+    dom.guideSteps.innerHTML = profile.steps
+      .map((step) => `<li><strong>${step.title}</strong><span>${step.text}</span></li>`)
+      .join('');
+  }
+}
+
+function setSettingsOpen(open, options = {}) {
+  if (!dom.settingsModal) return;
+  const { restoreFocus = true } = options;
+
+  if (open) {
+    lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (dom.guideModal) dom.guideModal.hidden = true;
+    dom.settingsModal.hidden = false;
+    syncOverlayState();
+    requestAnimationFrame(() => {
+      dom.closeSettingsBtn?.focus();
+    });
+    return;
+  }
+
+  dom.settingsModal.hidden = true;
+  syncOverlayState();
+  if (restoreFocus && lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+  }
+}
+
+function setGuideOpen(open, options = {}) {
+  if (!dom.guideModal) return;
+  const { remember = false, restoreFocus = true } = options;
+
+  if (open) {
+    populateGuideContent();
+    lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (dom.settingsModal) dom.settingsModal.hidden = true;
+    dom.guideModal.hidden = false;
+    syncOverlayState();
+    requestAnimationFrame(() => {
+      dom.guideStartBtn?.focus();
+    });
+    return;
+  }
+
+  dom.guideModal.hidden = true;
+  if (remember) {
+    markGuideSeen();
+  }
+  syncOverlayState();
+  if (restoreFocus && lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+  }
+}
+
+function isTextInputTarget(target) {
+  return target instanceof Element
+    && Boolean(target.closest('input, select, textarea, [contenteditable="true"]'));
 }
 
 function applyControlValues() {
@@ -235,7 +455,10 @@ function setStatusText() {
   setNodeText(dom.controlSummary, getControlSummary());
   const snapshot = motionController.getSnapshot();
 
-  if (!snapshot.secureContext && motionController.supported) {
+  if (!state.audioOn) {
+    setNodeText(dom.sensorStatus, 'Start Sound to begin');
+    setChipState(dom.sensorStatus, 'idle');
+  } else if (!snapshot.secureContext && motionController.supported) {
     setNodeText(dom.sensorStatus, 'HTTPS required for motion');
     setChipState(dom.sensorStatus, 'idle');
   } else if (state.motionEnabled && motionController.hasRecentSignal()) {
@@ -253,14 +476,16 @@ function setStatusText() {
   }
 
   if (state.audioOn) {
-    setNodeText(dom.engineStatus, `Tone live • ${dom.instrumentSelect.options[dom.instrumentSelect.selectedIndex].text}`);
+    setNodeText(dom.engineStatus, `Sound live • ${dom.instrumentSelect.options[dom.instrumentSelect.selectedIndex].text}`);
     setChipState(dom.engineStatus, 'active');
   } else {
-    setNodeText(dom.engineStatus, 'Tone idle');
+    setNodeText(dom.engineStatus, 'Sound idle');
     setChipState(dom.engineStatus, 'idle');
   }
 
-  dom.surfaceTip.textContent = state.motionEnabled
+  dom.surfaceTip.textContent = !state.audioOn
+    ? 'Start Sound to activate the live motion stage. On laptops, you can still drag here or use arrow keys after the sound starts.'
+    : state.motionEnabled
     ? `${MODE_HINTS[state.mode]} Touch the stage any time for fine correction.`
     : !snapshot.secureContext && motionController.supported
       ? `${MODE_HINTS[state.mode]} Motion needs HTTPS or localhost on mobile, so use the stage until the app is opened on a secure URL.`
@@ -269,22 +494,47 @@ function setStatusText() {
   if (state.audioOn && state.motionEnabled) {
     setHeroHelper('The instrument is armed. Move the phone to shape pitch, or use the stage for finer correction.');
   } else if (state.audioOn) {
-    setHeroHelper('Audio is live. If motion is blocked, use the stage or arrow keys to keep the instrument playable.');
-  } else if (state.motionEnabled) {
-    setHeroHelper('Motion is ready. Start the tone when you want to hear the movement mapped into pitch.');
+    setHeroHelper('Sound is live. If motion is blocked, use the stage or arrow keys to keep the instrument playable.');
   } else if (!snapshot.secureContext && motionController.supported) {
     setHeroHelper('This browser is on an insecure URL, so phone motion is blocked. Open Phononium on HTTPS or localhost to use sensors.');
   } else {
-    setHeroHelper('Enable motion, test the speaker once, then move the phone to shape pitch in real time.');
+    setHeroHelper('Start Sound to begin. If motion is available, Phononium will join it automatically.');
   }
 
   updateActionStates();
 }
 
 function updatePermissionBanner() {
-  const shouldShow = (!motionController.secureContext && motionController.supported)
-    || (motionController.permissionRequired && !state.motionEnabled);
-  dom.permissionBanner.hidden = !shouldShow;
+  if (!dom.permissionBanner) return;
+  const showMotionBanner = isMobileLikeDevice();
+
+  if (!showMotionBanner) {
+    dom.permissionBanner.hidden = true;
+    return;
+  }
+
+  if (!motionController.supported) {
+    setNodeText(dom.permissionHeadline, 'Motion not detected');
+    setPermissionStatus('This device/browser is not exposing motion sensors, so Phononium will stay on touch controls.', 'error');
+    dom.permissionBanner.hidden = false;
+    return;
+  }
+
+  if (!motionController.secureContext && motionController.supported) {
+    setNodeText(dom.permissionHeadline, 'Motion needs HTTPS');
+    setPermissionStatus('Open Phononium on HTTPS or localhost to use phone sensors.', 'error');
+    dom.permissionBanner.hidden = false;
+    return;
+  }
+
+  if (state.audioOn && state.motionAttempted && state.motionError) {
+    setNodeText(dom.permissionHeadline, 'Motion needs attention');
+    setPermissionStatus(state.motionError, 'error');
+    dom.permissionBanner.hidden = false;
+    return;
+  }
+
+  dom.permissionBanner.hidden = true;
 }
 
 function setPermissionStatus(message = '', tone = '') {
@@ -294,6 +544,13 @@ function setPermissionStatus(message = '', tone = '') {
   dom.permissionStatus.classList.remove('is-error', 'is-success');
   if (tone === 'error') dom.permissionStatus.classList.add('is-error');
   if (tone === 'success') dom.permissionStatus.classList.add('is-success');
+}
+
+function compactPermissionMessage(message, fallback) {
+  const source = String(message || fallback || '').trim();
+  if (!source) return '';
+  const firstSentence = source.split(/(?<=[.?!])\s+/)[0]?.trim() || source;
+  return /[.?!]$/.test(firstSentence) ? firstSentence : `${firstSentence}.`;
 }
 
 function setAudioHint(message = '', tone = '') {
@@ -313,19 +570,63 @@ async function syncAudioSettings() {
   toneEngine.setAnchorFrequency(midiToFrequency(getAnchorMidi()));
 }
 
+async function ensureMotionForPlayback() {
+  state.motionAttempted = true;
+  state.motionError = '';
+
+  if (!isMobileLikeDevice()) {
+    updatePermissionBanner();
+    return { granted: false, reason: '' };
+  }
+
+  if (!motionController.supported) {
+    state.motionEnabled = false;
+    state.motionError = 'This device/browser is not exposing motion sensors, so Phononium will stay on touch controls.';
+    updatePermissionBanner();
+    return { granted: false, reason: state.motionError };
+  }
+
+  if (!motionController.secureContext) {
+    state.motionEnabled = false;
+    state.motionError = 'Open Phononium on HTTPS or localhost to use phone sensors.';
+    updatePermissionBanner();
+    return { granted: false, reason: state.motionError };
+  }
+
+  const result = motionController.permissionRequired
+    ? await motionController.requestPermission()
+    : (motionController.start(), { granted: true, reason: '' });
+
+  state.motionEnabled = result.granted || motionController.active;
+  state.motionSignalLive = false;
+  state.motionError = state.motionEnabled
+    ? ''
+    : compactPermissionMessage(result.reason, 'Motion could not be enabled in this browser.');
+  updatePermissionBanner();
+  return result;
+}
+
 async function toggleAudio() {
   try {
     dom.audioToggleBtn.disabled = true;
-    await syncAudioSettings();
-    state.audioOn = await toneEngine.toggleTone();
-    setAudioHint(
-      state.audioOn
-        ? 'Tone engine is active. If you still hear nothing, raise volume or disable silent mode on the phone.'
-        : 'Tone engine stopped.',
-      state.audioOn ? 'success' : ''
-    );
+    if (!state.audioOn) {
+      const motionPromise = ensureMotionForPlayback();
+      await syncAudioSettings();
+      state.audioOn = await toneEngine.toggleTone(true);
+      await motionPromise;
+      startRuntime();
+      setAudioHint(
+        'Sound engine is active. If you still hear nothing, raise media volume or disable silent mode on the phone.',
+        'success'
+      );
+    } else {
+      state.audioOn = await toneEngine.toggleTone(false);
+      stopRuntime();
+      setAudioHint('Sound engine stopped.', '');
+    }
   } catch (error) {
     state.audioOn = false;
+    stopRuntime();
     setChipState(dom.engineStatus, 'idle');
     setNodeText(dom.engineStatus, 'Audio start failed');
     setAudioHint(error?.message || 'Audio could not start in this browser.', 'error');
@@ -342,8 +643,8 @@ async function playTestTone() {
     await toneEngine.playPreviewPing();
     setNodeText(dom.engineStatus, 'Speaker test played');
     setChipState(dom.engineStatus, 'fallback');
-    setAudioHint('Speaker test tone played. If you hear nothing, the device/browser is muting web audio.', 'success');
-    setHeroHelper('Speaker path confirmed. Start the tone when you want the motion and touch controls to become audible.');
+    setAudioHint('Speaker test sound played. If you hear nothing, the device/browser is muting web audio.', 'success');
+    setHeroHelper('Speaker path confirmed. Start Sound when you want the motion and touch controls to become audible.');
   } catch (error) {
     setNodeText(dom.engineStatus, 'Speaker test failed');
     setChipState(dom.engineStatus, 'idle');
@@ -354,20 +655,14 @@ async function playTestTone() {
 }
 
 async function enableMotion() {
-  dom.enableMotionBtn.disabled = true;
-  dom.enableMotionBtn.textContent = 'Enabling...';
-  setPermissionStatus('Requesting device motion access...', '');
-
-  const result = await motionController.requestPermission();
-  state.motionEnabled = result.granted || motionController.active;
-
-  if (state.motionEnabled) {
-    setPermissionStatus('Motion controls enabled. Move the device once to begin shaping pitch.', 'success');
-  } else {
-    setPermissionStatus(result.reason || 'Motion controls could not be enabled in this browser.', 'error');
+  if (!state.audioOn) {
+    setPermissionStatus('Start Sound first, then retry motion if needed.', '');
+    dom.permissionBanner.hidden = false;
+    return;
   }
-
-  updatePermissionBanner();
+  dom.enableMotionBtn.disabled = true;
+  dom.enableMotionBtn.textContent = 'Retrying...';
+  await ensureMotionForPlayback();
   setStatusText();
   dom.enableMotionBtn.disabled = false;
 }
@@ -427,6 +722,26 @@ function bindPointerFallback() {
 
 function bindKeyboardFallback() {
   window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && dom.guideModal && !dom.guideModal.hidden) {
+      event.preventDefault();
+      setGuideOpen(false, { remember: true });
+      return;
+    }
+
+    if (event.key === 'Escape' && dom.settingsModal && !dom.settingsModal.hidden) {
+      event.preventDefault();
+      setSettingsOpen(false);
+      return;
+    }
+
+    if ((dom.settingsModal && !dom.settingsModal.hidden) || (dom.guideModal && !dom.guideModal.hidden)) {
+      return;
+    }
+
+    if (isTextInputTarget(event.target)) {
+      return;
+    }
+
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
       event.preventDefault();
     }
@@ -441,6 +756,19 @@ function bindControls() {
   dom.audioToggleBtn.addEventListener('click', toggleAudio);
   dom.testToneBtn.addEventListener('click', playTestTone);
   dom.enableMotionBtn.addEventListener('click', enableMotion);
+  dom.openGuideBtn?.addEventListener('click', () => setGuideOpen(true));
+  dom.openSettingsBtn?.addEventListener('click', () => setSettingsOpen(true));
+  dom.openSettingsBtnSecondary?.addEventListener('click', () => setSettingsOpen(true));
+  dom.openGuideBtnSecondary?.addEventListener('click', () => setGuideOpen(true));
+  dom.closeSettingsBtn?.addEventListener('click', () => setSettingsOpen(false));
+  dom.settingsBackdrop?.addEventListener('click', () => setSettingsOpen(false));
+  dom.closeGuideBtn?.addEventListener('click', () => setGuideOpen(false, { remember: true }));
+  dom.guideBackdrop?.addEventListener('click', () => setGuideOpen(false, { remember: true }));
+  dom.guideStartBtn?.addEventListener('click', () => setGuideOpen(false, { remember: true }));
+  dom.guideOpenSettingsBtn?.addEventListener('click', () => {
+    setGuideOpen(false, { remember: true, restoreFocus: false });
+    setSettingsOpen(true, { restoreFocus: false });
+  });
   dom.anchorBtn.addEventListener('click', captureAnchor);
   dom.anchorBtnHero.addEventListener('click', captureAnchor);
   dom.resetAnchorBtn.addEventListener('click', resetAnchor);
@@ -524,18 +852,6 @@ function bindControls() {
     persist();
     captureAnchor();
   });
-
-  dom.fullscreenBtn.addEventListener('click', async () => {
-    if (!document.fullscreenElement) {
-      try {
-        await document.documentElement.requestFullscreen();
-      } catch (error) {}
-      return;
-    }
-    await document.exitFullscreen();
-  });
-
-  document.addEventListener('fullscreenchange', updateActionStates);
 }
 
 function renderReadout(noteData, motionResponse) {
@@ -550,6 +866,11 @@ function renderReadout(noteData, motionResponse) {
 }
 
 function tick(now = performance.now()) {
+  if (!state.audioOn) {
+    runtimeFrameId = 0;
+    return;
+  }
+
   const motionSignalLive = state.motionEnabled && motionController.hasRecentSignal();
   if (motionSignalLive !== state.motionSignalLive) {
     state.motionSignalLive = motionSignalLive;
@@ -602,32 +923,34 @@ function tick(now = performance.now()) {
     state.lastRenderSignature = renderSignature;
   }
 
-  requestAnimationFrame(tick);
+  runtimeFrameId = requestAnimationFrame(tick);
 }
 
 function init() {
   applyControlValues();
   updateAnchorLabels();
+  setSettingsOpen(false);
+  setGuideOpen(false, { restoreFocus: false });
+  populateGuideContent();
 
-  if (!motionController.secureContext && motionController.supported) {
-    setPermissionStatus('Motion controls require HTTPS or localhost. If you opened this on a phone using a local IP, sensors will stay blocked until you use a secure URL.', 'error');
-  }
-
+  renderReadout(state.currentNoteData, getNeutralMotionResponse());
+  sonicCanvas.render({
+    analyserData: null,
+    noteData: state.currentNoteData,
+    meta: { modeLabel: CONTROL_MODES[state.mode] }
+  });
   setStatusText();
   updatePermissionBanner();
   bindControls();
   bindPointerFallback();
   bindKeyboardFallback();
 
-  if (!motionController.permissionRequired && motionController.supported) {
-    motionController.start();
-    state.motionEnabled = true;
-    setPermissionStatus('Motion controls are available automatically in this browser.', 'success');
-    setStatusText();
-  }
-
   window.addEventListener('resize', () => sonicCanvas.resize());
-  requestAnimationFrame(tick);
+  if (shouldAutoOpenGuide()) {
+    requestAnimationFrame(() => {
+      setGuideOpen(true, { restoreFocus: false });
+    });
+  }
 }
 
 init();

@@ -9,7 +9,7 @@
   <link rel="canonical" href="https://madhav-kataria.com/projects/phononium-app/">
   <title>Phononium - Motion Controlled Instrument</title>
   <meta property="og:title" content="Phononium - Motion Controlled Instrument">
-  <meta property="og:description" content="Turn your phone into a low-latency motion instrument with live pitch, swara display, and expressive controls.">
+  <meta property="og:description" content="Turn your phone into a low-latency motion instrument with live Western and Indian note display.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://madhav-kataria.com/projects/phononium-app/">
   <meta property="og:image" content="https://madhav-kataria.com/assets/images/projects/phononium/hero.svg">
@@ -34,81 +34,89 @@
     }
   </script>
   <script src="../project-protection.js" defer></script>
-  <link rel="icon" type="image/svg+xml" href="../../assets/images/projects/phononium/logo.svg">
+  <script type="module" src="../../fullscreen-gesture.js"></script>
+  <link rel="icon" type="image/webp" href="../../assets/images/logoo.webp">
+  <link rel="apple-touch-icon" href="../../assets/images/logoo.webp">
   <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <a href="https://madhav-kataria.com/#projects" class="brand-link" aria-label="Back to projects">
-        <img src="../../assets/images/projects/phononium/logo.svg" alt="Phononium logo" class="brand-logo">
+      <div class="topbar-copy">
+        <span class="status-pill">Public Beta</span>
         <div>
           <span class="brand-title">Phononium</span>
           <span class="brand-subtitle">Motion-controlled instrument</span>
         </div>
-      </a>
+      </div>
       <div class="topbar-actions">
-        <span class="status-pill">Public Beta</span>
-        <button class="ghost-btn" id="fullscreenBtn" type="button">Fullscreen</button>
+        <button class="ghost-btn compact-btn" id="openSettingsBtn" type="button" data-no-fullscreen-gesture="true">Settings</button>
+        <a href="../../#projects" class="home-logo-link" aria-label="Back to main website" data-no-fullscreen-gesture="true">
+          <img src="../../assets/images/logoo.webp" alt="Madhav Kataria logo" class="home-logo">
+        </a>
       </div>
     </header>
 
     <div class="permission-banner" id="permissionBanner" hidden>
-      <div>
-        <strong>Enable motion controls</strong>
-        <p>On iPhone and some Android browsers, motion access needs one explicit tap.</p>
+      <div class="permission-copy">
+        <strong class="permission-headline" id="permissionHeadline">Motion needs attention</strong>
         <p class="permission-status" id="permissionStatus" hidden></p>
       </div>
-      <button class="primary-btn" id="enableMotionBtn" type="button">Enable Motion</button>
+      <div class="permission-actions">
+        <button class="ghost-btn compact-btn" id="openGuideBtn" type="button" data-no-fullscreen-gesture="true">Guide</button>
+        <button class="primary-btn compact-btn" id="enableMotionBtn" type="button">Retry Motion</button>
+      </div>
     </div>
 
-    <main class="layout">
-      <section class="hero-panel panel">
-        <div class="hero-copy">
-          <p class="eyebrow">Digital theremin / motion synthesizer</p>
-          <h1>Move the device. Hear the pitch. See the swara.</h1>
-          <p class="lead">Phononium maps phone motion to pitch in real time, converts it to Western and Indian notes, and keeps the response fast enough to feel playable on mobile.</p>
-          <div class="hero-highlights" aria-label="Phononium capabilities">
-            <span>Motion-shaped pitch</span>
-            <span>Western + Hindustani note view</span>
-            <span>Touch and keyboard fallback</span>
+    <main class="layout compact-layout">
+      <section class="panel quick-panel">
+        <div class="quick-panel-head">
+          <div>
+            <p class="panel-kicker">Quick Play</p>
+            <h1>Play in seconds</h1>
           </div>
-          <div class="hero-actions">
-            <button class="primary-btn" id="audioToggleBtn" type="button">Start Tone</button>
-            <button class="ghost-btn" id="testToneBtn" type="button">Test Speaker</button>
-            <button class="ghost-btn" id="anchorBtnHero" type="button">Set Pitch Anchor</button>
-          </div>
-          <p class="hero-helper" id="heroHelper">Enable motion, test the speaker once, then move the phone to shape pitch in real time.</p>
-          <p class="inline-status hero-status" id="audioHint">Use Test Speaker first if you want to confirm the phone speaker is active.</p>
+          <span class="mode-chip" id="engineStatus">Sound idle</span>
         </div>
-        <div class="hero-stat-grid">
-          <div class="stat-card">
-            <span class="stat-label">Source</span>
-            <strong id="sourceBadge">Motion Pending</strong>
+
+        <div class="quick-actions">
+          <button class="primary-btn action-btn-main" id="audioToggleBtn" type="button">Start Sound</button>
+          <div class="utility-actions">
+            <button class="ghost-btn compact-action-btn" id="testToneBtn" type="button">Speaker Test</button>
+            <button class="ghost-btn compact-action-btn" id="anchorBtnHero" type="button">Anchor</button>
           </div>
-          <div class="stat-card">
+        </div>
+
+        <div class="quick-stats">
+          <article class="stat-card compact-stat">
+            <span class="stat-label">Source</span>
+            <strong id="sourceBadge">Touch / Keys Ready</strong>
+          </article>
+          <article class="stat-card compact-stat">
             <span class="stat-label">Mode</span>
             <strong id="modeBadge">Theremin Flow</strong>
-          </div>
-          <div class="stat-card">
+          </article>
+          <article class="stat-card compact-stat">
             <span class="stat-label">Anchor</span>
             <strong id="anchorBadge">Sa / C4</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Session State</span>
+          </article>
+          <article class="stat-card compact-stat wide-stat">
+            <span class="stat-label">Session</span>
             <strong id="controlSummary">Awaiting first gesture</strong>
-          </div>
+          </article>
         </div>
+
+        <p class="hero-helper" id="heroHelper">Start Sound to begin. If motion is available, it will join automatically.</p>
+        <p class="inline-status hero-status" id="audioHint">Use Test Speaker first if you want to confirm the phone speaker is active.</p>
       </section>
 
-      <section class="stage-grid">
+      <section class="stage-grid compact-stage-grid">
         <article class="panel live-panel">
-          <div class="panel-head">
+          <div class="panel-head compact-panel-head">
             <div>
               <p class="panel-kicker">Live Pitch Display</p>
               <h2>Current note</h2>
             </div>
-            <span class="mode-chip" id="sensorStatus">Waiting for motion data</span>
+            <span class="mode-chip" id="sensorStatus">Start Sound to begin</span>
           </div>
 
           <div class="pitch-stage" id="motionSurface" tabindex="0" aria-label="Interactive pitch surface for touch, mouse, and keyboard fallback">
@@ -140,29 +148,47 @@
         </article>
 
         <article class="panel canvas-panel">
-          <div class="panel-head">
+          <div class="panel-head compact-panel-head">
             <div>
               <p class="panel-kicker">Sonic Canvas</p>
               <h2>Visualizer</h2>
             </div>
-            <span class="mode-chip" id="engineStatus">Tone idle</span>
+            <button class="ghost-btn compact-btn" id="openSettingsBtnSecondary" type="button" data-no-fullscreen-gesture="true">Tune</button>
           </div>
           <canvas id="sonicCanvas" width="960" height="620" aria-label="Live frequency, waveform, and pitch trail visualization"></canvas>
         </article>
       </section>
+    </main>
+  </div>
 
-      <section class="control-grid">
-        <article class="panel control-panel">
-          <div class="panel-head compact-head">
+  <div class="settings-modal" id="settingsModal" hidden>
+    <div class="settings-backdrop" id="settingsBackdrop"></div>
+    <section class="settings-sheet panel" id="settingsSheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="settings-header">
+        <div>
+          <p class="panel-kicker">Instrument Setup</p>
+          <h2 id="settingsTitle">Settings</h2>
+        </div>
+        <div class="settings-header-actions">
+          <button class="ghost-btn compact-btn" id="openGuideBtnSecondary" type="button" data-no-fullscreen-gesture="true">Guide</button>
+          <button class="ghost-btn compact-btn" id="closeSettingsBtn" type="button" data-no-fullscreen-gesture="true">Close</button>
+        </div>
+      </div>
+
+      <p class="settings-lead">Keep the first screen for performance. Use this sheet to tune sound, motion response, and pitch anchor.</p>
+
+      <div class="settings-grid">
+        <article class="settings-card">
+          <div class="panel-head compact-panel-head">
             <div>
-              <p class="panel-kicker">Tone Engine</p>
-              <h2>Sound</h2>
+              <p class="panel-kicker">Sound Engine</p>
+              <h3>Sound</h3>
             </div>
           </div>
           <label>
             <span>Instrument</span>
             <select id="instrumentSelect">
-              <option value="pureTone">Pure Tone</option>
+              <option value="pureTone">Pure Sound</option>
               <option value="synthLead">Synth Lead</option>
               <option value="ambientPad">Ambient Pad</option>
               <option value="fluteStyle">Flute Style</option>
@@ -183,22 +209,22 @@
             <input id="volumeInput" type="range" min="0" max="100" value="70">
             <strong id="volumeValue">70%</strong>
           </label>
-          <div class="micro-card">
-            <span class="readout-label">Playback path</span>
-            <strong>Browser synth -> device speaker</strong>
-            <p>Use the top action bar for a quick speaker test before performing.</p>
-          </div>
           <label class="switch-row">
             <span>Sustain</span>
             <input id="sustainToggle" type="checkbox" checked>
           </label>
+          <div class="micro-card">
+            <span class="readout-label">Playback path</span>
+            <strong>Browser synth -> device speaker</strong>
+            <p>Use speaker test once, then keep the main screen focused on performance.</p>
+          </div>
         </article>
 
-        <article class="panel control-panel">
-          <div class="panel-head compact-head">
+        <article class="settings-card">
+          <div class="panel-head compact-panel-head">
             <div>
               <p class="panel-kicker">Motion Control</p>
-              <h2>Interaction</h2>
+              <h3>Response</h3>
             </div>
           </div>
           <label>
@@ -243,15 +269,15 @@
           <div class="micro-card">
             <span class="readout-label">Fallback controls</span>
             <strong>Touch surface + arrow keys</strong>
-            <p>If sensors are blocked or unavailable, Phononium stays playable through the stage area.</p>
+            <p>If sensors are blocked, the live stage remains playable through touch and keyboard.</p>
           </div>
         </article>
 
-        <article class="panel control-panel">
-          <div class="panel-head compact-head">
+        <article class="settings-card">
+          <div class="panel-head compact-panel-head">
             <div>
               <p class="panel-kicker">Pitch Anchor</p>
-              <h2>Calibration</h2>
+              <h3>Calibration</h3>
             </div>
           </div>
           <label>
@@ -268,7 +294,7 @@
               <option value="6">6</option>
             </select>
           </label>
-          <div class="button-stack">
+          <div class="button-stack settings-button-stack">
             <button class="primary-btn" id="anchorBtn" type="button">Set Pitch Anchor</button>
             <button class="ghost-btn" id="resetAnchorBtn" type="button">Reset Anchor</button>
           </div>
@@ -277,8 +303,43 @@
             <strong id="anchorDetail">Current posture anchored to C4 / Sa</strong>
           </div>
         </article>
-      </section>
-    </main>
+      </div>
+    </section>
+  </div>
+
+  <div class="guide-modal" id="guideModal" hidden>
+    <div class="settings-backdrop" id="guideBackdrop"></div>
+    <section class="guide-sheet panel" id="guideSheet" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+      <div class="settings-header">
+        <div>
+          <p class="panel-kicker" id="guideDeviceBadge">First Run Guide</p>
+          <h2 id="guideTitle">How Phononium works</h2>
+        </div>
+        <button class="ghost-btn compact-btn" id="closeGuideBtn" type="button" data-no-fullscreen-gesture="true">Close</button>
+      </div>
+
+      <p class="settings-lead" id="guideLead">Phononium changes how it behaves depending on whether you are on a phone or laptop.</p>
+
+      <div class="guide-grid">
+        <article class="settings-card guide-card">
+          <span class="readout-label">Best way to play</span>
+          <strong id="guidePrimaryMode">Move the phone to shape pitch</strong>
+          <p id="guidePrimaryText">Use motion controls for the main performance flow.</p>
+        </article>
+        <article class="settings-card guide-card">
+          <span class="readout-label">If motion is blocked</span>
+          <strong id="guideFallbackMode">Use the stage surface</strong>
+          <p id="guideFallbackText">Fallback controls keep the app playable.</p>
+        </article>
+      </div>
+
+      <ol class="guide-steps" id="guideSteps"></ol>
+
+      <div class="guide-actions">
+        <button class="ghost-btn" id="guideOpenSettingsBtn" type="button" data-no-fullscreen-gesture="true">Open Settings</button>
+        <button class="primary-btn" id="guideStartBtn" type="button" data-no-fullscreen-gesture="true">Start Playing</button>
+      </div>
+    </section>
   </div>
 
   <script type="module" src="js/app.js"></script>
