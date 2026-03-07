@@ -227,6 +227,54 @@ window.PROJECT_DETAILS = {
     ]
   },
 
+  phononium: {
+    title: "Phononium",
+    subtitle: "A motion-controlled browser instrument that maps device movement to pitch and displays both Western notes and Indian swaras in real time.",
+    createdOn: "March 2026",
+    visibility: "Public",
+    status: "Under Development",
+    likes: 0,
+    heroImage: "../../assets/images/projects/phononium/hero.svg",
+    heroFit: "contain",
+    headerIcon: "../../assets/images/projects/phononium/icon.svg",
+    headerHighlights: ["SkyPitch", "Pitch Anchor", "Theremin Flow", "Low Latency"],
+    logoImage: "../../assets/images/projects/phononium/logo.svg",
+    overview: [
+      "Phononium is designed as a mobile-first motion instrument that feels closer to a digital theremin than a static synth panel.",
+      "The app reads device orientation and motion in the browser, maps that movement to a calibrated pitch range, and updates both frequency and note identity with minimal delay.",
+      "It also includes a laptop-safe fallback so users can still explore the instrument using pointer movement and keyboard nudges when motion sensors are unavailable."
+    ],
+    requirements: [
+      "Modern browser with Web Audio API support",
+      "Mobile device with motion/orientation sensors for the full experience",
+      "Optional headphones for cleaner monitoring and less speaker feedback",
+      "Laptop users can use touch, mouse, or arrow-key fallback controls"
+    ],
+    highlights: [
+      "Multiple performance modes: SkyPitch, Horizon Glide, Orbit Control, Gravity Bend, and Theremin Flow",
+      "Pitch Anchor calibration so a chosen posture maps to a selected base note and octave",
+      "Real-time note conversion with Western notation plus Hindustani labels in both English and Hindi",
+      "Low-latency oscillator-based tone engine with selectable instruments and waveform control",
+      "Scale lock, vibrato depth, pitch range, sustain, and octave lock for more controlled playability",
+      "Canvas-driven sonic visualizer combining waveform, spectrum, pitch trail, and tuning meter",
+      "Full browser-only implementation with no backend dependency and no audio upload"
+    ],
+    mvp: [
+      "Turns a standard smartphone into an expressive, browser-native musical instrument without installing an app.",
+      "Makes experimental pitch play more intuitive by combining motion, note naming, and visual feedback in one lightweight interface."
+    ],
+    techStack: ["HTML", "CSS", "JavaScript", "Web Audio API", "DeviceOrientationEvent", "DeviceMotionEvent", "Canvas"],
+    gallery: [
+      { src: "../../assets/images/projects/phononium/hero.svg", alt: "Phononium hero preview" },
+      { src: "../../assets/images/projects/phononium/gallery-context.svg", alt: "Phononium modes and fallback controls" },
+      { src: "../../assets/images/projects/phononium/motion-map.svg", alt: "Phononium pitch anchor and motion mapping" }
+    ],
+    links: [
+      { label: "Open", href: "../phononium-app/", style: "success", external: false },
+      { label: "Back to Projects", href: "../../#projects", external: false }
+    ]
+  },
+
   "kba-review": {
     title: "KBA Review",
     subtitle: "Power Apps + Power BI governance workflow to standardize Knowledge Base Articles (KBAs) and track review quality for AI-assisted IT support.",

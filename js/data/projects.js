@@ -33,6 +33,21 @@ window.PROJECTS_DATA = [
     ]
   },
   {
+    slug: "phononium",
+    title: "Phononium",
+    summary: "Phononium is a fully client-side motion instrument that turns phone tilt, lift, and rotation into playable pitch with live Western note and Indian swara feedback.",
+    createdOn: "March 2026",
+    visibility: "Public",
+    status: "Under Development",
+    likes: 0,
+    techStack: ["JavaScript", "Web Audio API", "Device Motion", "Canvas"],
+    image: "assets/images/projects/phononium/hero.svg",
+    actions: [
+      { label: "Open", href: "projects/phononium-app/", style: "success", external: false },
+      { label: "Know More", href: "projects/phononium/", style: "ghost", external: false }
+    ]
+  },
+  {
     slug: "AutomationDashboard",
     title: "Employee Details",
     summary: "Demo Power BI dashboard showing employee profiles, team distribution, and workforce insights in one consolidated view.",

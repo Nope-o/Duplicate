@@ -1,0 +1,45 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="140" y1="76" x2="1438" y2="838" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#060A18"/>
+      <stop offset="1" stop-color="#0B1328"/>
+    </linearGradient>
+    <linearGradient id="a" x1="206" y1="170" x2="1330" y2="726" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="0.5" stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" rx="40" fill="url(#bg)"/>
+  <text x="186" y="146" fill="#F8FAFC" font-size="54" font-family="Inter, Arial, sans-serif" font-weight="800">Modes & fallback controls</text>
+  <g>
+    <rect x="180" y="200" width="280" height="190" rx="26" fill="#0C1629" stroke="rgba(103,232,249,0.25)"/>
+    <text x="214" y="256" fill="#67E8F9" font-size="32" font-family="Inter, Arial, sans-serif" font-weight="700">SkyPitch</text>
+    <text x="214" y="308" fill="#D8E5FF" font-size="24" font-family="Inter, Arial, sans-serif">Lift / tilt upward</text>
+    <text x="214" y="344" fill="#9FB3D9" font-size="22" font-family="Inter, Arial, sans-serif">Pitch rises with vertical angle.</text>
+  </g>
+  <g>
+    <rect x="500" y="200" width="280" height="190" rx="26" fill="#0C1629" stroke="rgba(168,85,247,0.25)"/>
+    <text x="534" y="256" fill="#C084FC" font-size="32" font-family="Inter, Arial, sans-serif" font-weight="700">Horizon Glide</text>
+    <text x="534" y="308" fill="#D8E5FF" font-size="24" font-family="Inter, Arial, sans-serif">Left / right motion</text>
+    <text x="534" y="344" fill="#9FB3D9" font-size="22" font-family="Inter, Arial, sans-serif">Glide across a defined pitch span.</text>
+  </g>
+  <g>
+    <rect x="820" y="200" width="280" height="190" rx="26" fill="#0C1629" stroke="rgba(52,211,153,0.25)"/>
+    <text x="854" y="256" fill="#6EE7B7" font-size="32" font-family="Inter, Arial, sans-serif" font-weight="700">Orbit Control</text>
+    <text x="854" y="308" fill="#D8E5FF" font-size="24" font-family="Inter, Arial, sans-serif">Rotation mapping</text>
+    <text x="854" y="344" fill="#9FB3D9" font-size="22" font-family="Inter, Arial, sans-serif">Smooth pitch movement through yaw.</text>
+  </g>
+  <g>
+    <rect x="1140" y="200" width="280" height="190" rx="26" fill="#0C1629" stroke="rgba(103,232,249,0.18)"/>
+    <text x="1174" y="256" fill="#93C5FD" font-size="32" font-family="Inter, Arial, sans-serif" font-weight="700">Theremin Flow</text>
+    <text x="1174" y="308" fill="#D8E5FF" font-size="24" font-family="Inter, Arial, sans-serif">Multi-axis expressivity</text>
+    <text x="1174" y="344" fill="#9FB3D9" font-size="22" font-family="Inter, Arial, sans-serif">Pitch, vibrato and modulation combined.</text>
+  </g>
+  <rect x="180" y="456" width="1240" height="262" rx="32" fill="#0A1222" stroke="rgba(255,255,255,0.08)"/>
+  <text x="228" y="522" fill="#F8FAFC" font-size="42" font-family="Inter, Arial, sans-serif" font-weight="700">Laptop fallback</text>
+  <text x="228" y="582" fill="#D8E5FF" font-size="28" font-family="Inter, Arial, sans-serif">Mouse / touch surface sets pitch position, arrow keys nudge semitones, and the same live note display stays active.</text>
+  <path d="M1034 638C1102 604 1162 590 1222 590C1282 590 1328 610 1370 650" stroke="url(#a)" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="1032" cy="638" r="10" fill="#67E8F9"/>
+  <circle cx="1369" cy="650" r="10" fill="#34D399"/>
+</svg>

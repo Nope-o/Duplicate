@@ -1,0 +1,48 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="100" y1="70" x2="1450" y2="830" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#050816"/>
+      <stop offset="0.55" stop-color="#0B1730"/>
+      <stop offset="1" stop-color="#07101E"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="257" y1="178" x2="1338" y2="732" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67E8F9"/>
+      <stop offset="0.5" stop-color="#A855F7"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <linearGradient id="card" x1="265" y1="170" x2="1332" y2="742" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D1A31"/>
+      <stop offset="1" stop-color="#0A1326"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="900" rx="40" fill="url(#bg)"/>
+  <circle cx="280" cy="160" r="180" fill="#22D3EE" opacity="0.12"/>
+  <circle cx="1350" cy="150" r="220" fill="#A855F7" opacity="0.12"/>
+  <circle cx="1260" cy="720" r="190" fill="#34D399" opacity="0.1"/>
+  <rect x="180" y="120" width="1240" height="660" rx="42" fill="url(#card)" stroke="rgba(255,255,255,0.08)"/>
+  <text x="260" y="220" fill="#F8FAFC" font-size="72" font-family="Inter, Arial, sans-serif" font-weight="800">Phononium</text>
+  <text x="262" y="272" fill="#9FB3D9" font-size="28" font-family="Inter, Arial, sans-serif">Motion-controlled instrument for expressive pitch, swara and theremin-style performance.</text>
+  <rect x="250" y="326" width="516" height="344" rx="28" fill="#07101E" stroke="rgba(103,232,249,0.18)"/>
+  <text x="286" y="378" fill="#E2E8F0" font-size="30" font-family="Inter, Arial, sans-serif" font-weight="700">Live Pitch Display</text>
+  <text x="286" y="440" fill="#FFFFFF" font-size="112" font-family="Inter, Arial, sans-serif" font-weight="800">G4</text>
+  <text x="286" y="494" fill="#22D3EE" font-size="42" font-family="Inter, Arial, sans-serif" font-weight="700">Pa / प</text>
+  <text x="286" y="552" fill="#C6D4F6" font-size="32" font-family="Inter, Arial, sans-serif">392.0 Hz • Theremin Flow</text>
+  <path d="M286 608C360 580 420 560 480 560C550 560 585 633 650 633C707 633 734 584 794 524" stroke="url(#accent)" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="792" cy="525" r="14" fill="#34D399"/>
+  <rect x="820" y="326" width="540" height="344" rx="28" fill="#091223" stroke="rgba(168,85,247,0.2)"/>
+  <text x="858" y="378" fill="#E2E8F0" font-size="30" font-family="Inter, Arial, sans-serif" font-weight="700">Sonic Canvas</text>
+  <circle cx="1088" cy="494" r="118" stroke="url(#accent)" stroke-width="14" opacity="0.9"/>
+  <circle cx="1088" cy="494" r="62" fill="#0F172A" stroke="#67E8F9" stroke-width="6"/>
+  <path d="M910 602C948 560 988 538 1036 538C1078 538 1108 568 1148 568C1192 568 1228 528 1274 456" stroke="#7C3AED" stroke-width="10" stroke-linecap="round" opacity="0.92"/>
+  <path d="M912 456H1260" stroke="#163052" stroke-width="3" opacity="0.8"/>
+  <path d="M912 514H1260" stroke="#163052" stroke-width="3" opacity="0.8"/>
+  <path d="M912 572H1260" stroke="#163052" stroke-width="3" opacity="0.8"/>
+  <path d="M914 628H1262" stroke="#163052" stroke-width="3" opacity="0.8"/>
+  <rect x="250" y="708" width="1110" height="34" rx="17" fill="#07101E" stroke="rgba(255,255,255,0.06)"/>
+  <circle cx="356" cy="725" r="11" fill="#67E8F9"/>
+  <text x="382" y="733" fill="#D7E6FF" font-size="22" font-family="Inter, Arial, sans-serif">SkyPitch</text>
+  <circle cx="606" cy="725" r="11" fill="#A855F7"/>
+  <text x="632" y="733" fill="#D7E6FF" font-size="22" font-family="Inter, Arial, sans-serif">Pitch Anchor</text>
+  <circle cx="930" cy="725" r="11" fill="#34D399"/>
+  <text x="956" y="733" fill="#D7E6FF" font-size="22" font-family="Inter, Arial, sans-serif">Low Latency Tone Engine</text>
+</svg>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Phononium is a motion-controlled browser instrument with live Western and Indian note display.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://madhav-kataria.com/projects/phononium-app/">
+  <title>Phononium - Motion Controlled Instrument</title>
+  <meta property="og:title" content="Phononium - Motion Controlled Instrument">
+  <meta property="og:description" content="Turn your phone into a low-latency motion instrument with live pitch, swara display, and expressive controls.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://madhav-kataria.com/projects/phononium-app/">
+  <meta property="og:image" content="https://madhav-kataria.com/assets/images/projects/phononium/hero.svg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Phononium - Motion Controlled Instrument">
+  <meta name="twitter:description" content="Move, tilt and rotate your phone to sculpt pitch in real time.">
+  <meta name="twitter:image" content="https://madhav-kataria.com/assets/images/projects/phononium/hero.svg">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Phononium",
+      "applicationCategory": "MusicApplication",
+      "operatingSystem": "Web Browser",
+      "url": "https://madhav-kataria.com/projects/phononium-app/",
+      "description": "A client-side motion-controlled digital instrument with live Western and Indian note mapping.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      }
+    }
+  </script>
+  <script src="../project-protection.js" defer></script>
+  <link rel="icon" type="image/svg+xml" href="../../assets/images/projects/phononium/logo.svg">
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a href="https://madhav-kataria.com/#projects" class="brand-link" aria-label="Back to projects">
+        <img src="../../assets/images/projects/phononium/logo.svg" alt="Phononium logo" class="brand-logo">
+        <div>
+          <span class="brand-title">Phononium</span>
+          <span class="brand-subtitle">Motion-controlled instrument</span>
+        </div>
+      </a>
+      <div class="topbar-actions">
+        <span class="status-pill">Public Beta</span>
+        <button class="ghost-btn" id="fullscreenBtn" type="button">Fullscreen</button>
+      </div>
+    </header>
+
+    <div class="permission-banner" id="permissionBanner" hidden>
+      <div>
+        <strong>Enable motion controls</strong>
+        <p>On iPhone and some Android browsers, motion access needs one explicit tap.</p>
+        <p class="permission-status" id="permissionStatus" hidden></p>
+      </div>
+      <button class="primary-btn" id="enableMotionBtn" type="button">Enable Motion</button>
+    </div>
+
+    <main class="layout">
+      <section class="hero-panel panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Digital theremin / motion synthesizer</p>
+          <h1>Move the device. Hear the pitch. See the swara.</h1>
+          <p class="lead">Phononium maps phone motion to pitch in real time, converts it to Western and Indian notes, and keeps the response fast enough to feel playable on mobile.</p>
+          <div class="hero-highlights" aria-label="Phononium capabilities">
+            <span>Motion-shaped pitch</span>
+            <span>Western + Hindustani note view</span>
+            <span>Touch and keyboard fallback</span>
+          </div>
+          <div class="hero-actions">
+            <button class="primary-btn" id="audioToggleBtn" type="button">Start Tone</button>
+            <button class="ghost-btn" id="testToneBtn" type="button">Test Speaker</button>
+            <button class="ghost-btn" id="anchorBtnHero" type="button">Set Pitch Anchor</button>
+          </div>
+          <p class="hero-helper" id="heroHelper">Enable motion, test the speaker once, then move the phone to shape pitch in real time.</p>
+          <p class="inline-status hero-status" id="audioHint">Use Test Speaker first if you want to confirm the phone speaker is active.</p>
+        </div>
+        <div class="hero-stat-grid">
+          <div class="stat-card">
+            <span class="stat-label">Source</span>
+            <strong id="sourceBadge">Motion Pending</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Mode</span>
+            <strong id="modeBadge">Theremin Flow</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Anchor</span>
+            <strong id="anchorBadge">Sa / C4</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Session State</span>
+            <strong id="controlSummary">Awaiting first gesture</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage-grid">
+        <article class="panel live-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Live Pitch Display</p>
+              <h2>Current note</h2>
+            </div>
+            <span class="mode-chip" id="sensorStatus">Waiting for motion data</span>
+          </div>
+
+          <div class="pitch-stage" id="motionSurface" tabindex="0" aria-label="Interactive pitch surface for touch, mouse, and keyboard fallback">
+            <div class="pitch-display">
+              <span class="note-western" id="westernNote">C4</span>
+              <span class="note-indian" id="indianNote">Sa</span>
+              <span class="note-hindi" id="hindiNote">सा</span>
+            </div>
+            <div class="pitch-readouts">
+              <div>
+                <span class="readout-label">Current Frequency</span>
+                <strong id="frequencyValue">261.63 Hz</strong>
+              </div>
+              <div>
+                <span class="readout-label">Cents</span>
+                <strong id="centsValue">+0¢</strong>
+              </div>
+              <div>
+                <span class="readout-label">Pitch Range</span>
+                <strong id="rangeValueLabel">24 st</strong>
+              </div>
+              <div>
+                <span class="readout-label">Motion Vector</span>
+                <strong id="motionVector">0.00 / 0.00 / 0.00</strong>
+              </div>
+            </div>
+            <p class="surface-tip" id="surfaceTip">On phones: move or tilt the device. On laptops: drag here or use arrow keys.</p>
+          </div>
+        </article>
+
+        <article class="panel canvas-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Sonic Canvas</p>
+              <h2>Visualizer</h2>
+            </div>
+            <span class="mode-chip" id="engineStatus">Tone idle</span>
+          </div>
+          <canvas id="sonicCanvas" width="960" height="620" aria-label="Live frequency, waveform, and pitch trail visualization"></canvas>
+        </article>
+      </section>
+
+      <section class="control-grid">
+        <article class="panel control-panel">
+          <div class="panel-head compact-head">
+            <div>
+              <p class="panel-kicker">Tone Engine</p>
+              <h2>Sound</h2>
+            </div>
+          </div>
+          <label>
+            <span>Instrument</span>
+            <select id="instrumentSelect">
+              <option value="pureTone">Pure Tone</option>
+              <option value="synthLead">Synth Lead</option>
+              <option value="ambientPad">Ambient Pad</option>
+              <option value="fluteStyle">Flute Style</option>
+              <option value="tanpuraDrone">Tanpura Drone</option>
+            </select>
+          </label>
+          <label>
+            <span>Waveform</span>
+            <select id="waveformSelect">
+              <option value="sine">Sine</option>
+              <option value="triangle">Triangle</option>
+              <option value="square">Square</option>
+              <option value="sawtooth">Sawtooth</option>
+            </select>
+          </label>
+          <label>
+            <span>Volume</span>
+            <input id="volumeInput" type="range" min="0" max="100" value="70">
+            <strong id="volumeValue">70%</strong>
+          </label>
+          <div class="micro-card">
+            <span class="readout-label">Playback path</span>
+            <strong>Browser synth -> device speaker</strong>
+            <p>Use the top action bar for a quick speaker test before performing.</p>
+          </div>
+          <label class="switch-row">
+            <span>Sustain</span>
+            <input id="sustainToggle" type="checkbox" checked>
+          </label>
+        </article>
+
+        <article class="panel control-panel">
+          <div class="panel-head compact-head">
+            <div>
+              <p class="panel-kicker">Motion Control</p>
+              <h2>Interaction</h2>
+            </div>
+          </div>
+          <label>
+            <span>Control Mode</span>
+            <select id="modeSelect">
+              <option value="skyPitch">SkyPitch</option>
+              <option value="horizonGlide">Horizon Glide</option>
+              <option value="orbitControl">Orbit Control</option>
+              <option value="gravityBend">Gravity Bend</option>
+              <option value="thereminFlow" selected>Theremin Flow</option>
+            </select>
+          </label>
+          <label>
+            <span>Motion Sensitivity</span>
+            <input id="sensitivityInput" type="range" min="40" max="180" value="100">
+            <strong id="sensitivityValue">1.00x</strong>
+          </label>
+          <label>
+            <span>Pitch Range</span>
+            <input id="rangeInput" type="range" min="12" max="36" value="24">
+            <strong id="rangeValue">24 semitones</strong>
+          </label>
+          <label>
+            <span>Scale Lock</span>
+            <select id="scaleSelect">
+              <option value="chromatic">Chromatic</option>
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+              <option value="yaman">Raga Yaman</option>
+              <option value="pentatonic">Pentatonic</option>
+            </select>
+          </label>
+          <label>
+            <span>Vibrato Depth</span>
+            <input id="vibratoInput" type="range" min="0" max="100" value="32">
+            <strong id="vibratoValue">32%</strong>
+          </label>
+          <label class="switch-row">
+            <span>Octave Lock</span>
+            <input id="octaveLockToggle" type="checkbox">
+          </label>
+          <div class="micro-card">
+            <span class="readout-label">Fallback controls</span>
+            <strong>Touch surface + arrow keys</strong>
+            <p>If sensors are blocked or unavailable, Phononium stays playable through the stage area.</p>
+          </div>
+        </article>
+
+        <article class="panel control-panel">
+          <div class="panel-head compact-head">
+            <div>
+              <p class="panel-kicker">Pitch Anchor</p>
+              <h2>Calibration</h2>
+            </div>
+          </div>
+          <label>
+            <span>Base Note</span>
+            <select id="baseNoteSelect"></select>
+          </label>
+          <label>
+            <span>Octave</span>
+            <select id="octaveSelect">
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4" selected>4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select>
+          </label>
+          <div class="button-stack">
+            <button class="primary-btn" id="anchorBtn" type="button">Set Pitch Anchor</button>
+            <button class="ghost-btn" id="resetAnchorBtn" type="button">Reset Anchor</button>
+          </div>
+          <div class="anchor-note-box">
+            <span class="readout-label">Anchor reference</span>
+            <strong id="anchorDetail">Current posture anchored to C4 / Sa</strong>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
